@@ -30,3 +30,62 @@ plot(pressure)
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
 
 ```{r, cache=FALSE, message=FALSE, warning=FALSE, results='hide'}
+
+if (!require("pacman")) install.packages("pacman")
+
+pacotes_cran <- c(
+  "devtools",
+  "tidyverse",    # Coleção de pacotes para manipulação e visualização de dados (ggplot2, dplyr, etc.)
+  "vcfR",         # Para ler e manipular arquivos VCF (seus dados genéticos)
+  "CMplot",       # Para criar gráficos de Manhattan e outros gráficos genômicos
+  "parallel",     # Para executar tarefas em paralelo e acelerar o processamento
+  "ggpubr",       # Facilita a criação de gráficos prontos para publicação
+  "ggh4x",        # Extensões para o ggplot2
+  "grid",          # Funções gráficas de baixo nível
+  "circlize",
+  "onemap"
+)
+# formato "nome_do_usuario/nome_do_repositorio".
+pacotes_github <- c(
+  "dcgerard/segtest@higher", # Pacote para testes de segregação. A parte "@higher" instala uma versão específica.
+  "dcgerard/updog",          # Para genotipagem de poliploides
+  "dcgerard/ldsep",          # Para análise de desequilíbrio de ligação
+  "jendelman/GWASpoly",      # Para estudos de associação genômica ampla (GWAS) em poliploides
+  "mmollina/mappoly"         # Para construção de mapas de ligação em poliploides
+)
+
+pacman::p_load(char = pacotes_cran)
+pacman::p_load_gh(char = pacotes_github)
+
+rm(list = ls())
+gc(verbose = FALSE)
+```
+
+```{r, cache=FALSE}
+
+
+library(vcfR)
+library(ape)
+
+# Ler o seu arquivo de anotação GFF.
+gff <- ape::read.gff("F:/Dados_projeto/analise_danubia/genomic.gff")
+cat("Dimensões do arquivo GFF original:", dim(gff), "\n") 
+
+
+dna <- read.dna("F:/Dados_projeto/analise_danubia/GCF_036785885.1_Coffea_Arabica_ET-39_HiFi_genomic.fna", format = "fasta")
+
+
+vcf_Cc <- read.vcfR("F:/Dados_projeto/analise_danubia/Ca_var_norm_filter_BIAL_QUAL_AF_NS_flex.vcf")
+
+
+chrom <- create.chromR(name = 'NC_092310.1', vcf = vcf_Cc, seq = dna, ann = gff) 
+png(filename = "grafico_controle_qualidade_Cc.png", width = 1000, height = 800)
+chromoqc(chrom, dp.alpha = 20)
+dev.off()
+
+
+plot(chrom)
+
+
+chromoqc(chrom, dp.alpha = 20) 
+```
