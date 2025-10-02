@@ -118,10 +118,30 @@ counts_Cc <- table(matrix(unlist(strsplit(rownames(AOmat_Cc), split = "_")), nco
 counts_Ce <- table(matrix(unlist(strsplit(rownames(AOmat_Ce), split = "_")), ncol = 2, byrow = TRUE)[,1])
 
 #converte em dataframe
-counts_Ca <- data.frame(Reference=rep("Ca", lenght(counts_Ca)), counts_Ca)
-counts_Ce <- data.frame(Reference=rep("Ce", lenght(counts_Ce)), counts_Ce)
-counts_Ca <- data.frame(Reference=rep("Cc", lenght(counts_Cc)), counts_Cc)
+counts_Ca <- data.frame(Reference=rep("Ca", length(counts_Ca)), counts_Ca)
+counts_Ce <- data.frame(Reference=rep("Ce", length(counts_Ce)), counts_Ce)
+counts_Ca <- data.frame(Reference=rep("Cc", length(counts_Cc)), counts_Cc)
 
 # juntar os data frames
 
 counts2x <- rbind(counts_Ca, counts_Ce, counts_Cc)
+
+if (!require("stringr")) install.packages("stringr")
+library(stringr)
+counts2x$Chr <- as.integer(str_extract(counts2x$Var1, "\\d+")) # Extrai o número do cromossomo
+counts2x$Subgenome <- ifelse(grepl("c", counts2x$Var1, ignore.case = TRUE) & grepl("Cc", counts2x$Reference), "canephora",
+                           ifelse(grepl("e", counts2x$Var1, ignore.case = TRUE) & grepl("Ce", counts2x$Reference), "eugenioides", "arabica"))
+
+A <- ggplot(counts2x, aes(x = Reference, y = Freq, fill = Subgenome, group = Reference)) +
+  geom_bar(position = position_stack(), stat="identity", alpha = 0.7) +
+  facet_grid(~ Chr, switch = "both") +
+  scale_y_continuous(expand = c(0,0)) +
+  scale_fill_manual(values = c("arabica" = "grey", "canephora" = "#993300", "eugenioides" = "#f5ad05")) +
+  labs(y = "Number of SNPs", x = "Reference Alignment") +
+  theme_classic() +
+  theme(legend.position = "top", strip.background = element_blank(), strip.placement = "outside")
+
+print(A)
+
+ggsave("contagem_snps_por_cromossomo.png", plot = A, width = 10, height = 5, dpi = 400)
+```
