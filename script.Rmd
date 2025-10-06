@@ -63,38 +63,85 @@ gc(verbose = FALSE)
 
 ```{r, cache=FALSE}
 
+# --- VERSÃO FINAL E DEFINITIVA (v11) ---
 
+# Carregando os pacotes necessários
 library(vcfR)
 library(ape)
+library(stringr)
+library(ggplot2)
 
-# Ler o seu arquivo de anotação GFF.
-gff <- ape::read.gff("F:/Dados_projeto/analise_danubia/genomic.gff")
-cat("Dimensões do arquivo GFF original:", dim(gff), "\n") 
+# --- PASSO 1: Carregar os arquivos ---
+vcf_Cc <- vcfR::read.vcfR("Cc_var_norm_filter_BIAL_QUAL_AF_NS_flex.vcf")
+gff <- ape::read.gff("genomic.gff")
+dna <- ape::read.dna("GCF_036785885.1_Coffea_Arabica_ET-39_HiFi_genomic.fna", format = "fasta")
+
+# --- PASSO 2: Criar a tabela de mapeamento ---
+region_info <- gff[gff$type == "region", ]
+bio_names <- sapply(as.character(region_info$attributes), function(attr_string) {
+  fields <- strsplit(attr_string, ";")[[1]]
+  chrom_field <- grep("chromosome=", fields, value = TRUE)
+  if (length(chrom_field) == 0) return(NA)
+  return(strsplit(chrom_field, "=")[[1]][2])
+})
+chrom_map <- data.frame(
+  ncbi_id = as.character(region_info$seqid),
+  bio_name = bio_names
+)
+chrom_map <- chrom_map[chrom_map$bio_name != "Unknown", ]
+chrom_map <- na.omit(chrom_map)
+
+# --- PASSO 3: PADRONIZAR NOMES DE CROMOSSOMOS EM TODOS OS OBJETOS ---
+
+print("---- PASSO 3: Padronizando nomes de cromossomos... ----")
+
+# 3.1 Padronizar GFF: Substituir 'NC_...' por '1c', '1e', etc.
+gff_chroms <- as.character(gff$seqid)
+gff$seqid <- chrom_map$bio_name[match(gff_chroms, chrom_map$ncbi_id)]
+
+# 3.2 Padronizar DNA: Substituir 'NC_...' por '1c', '1e', etc.
+dna_ids <- word(names(dna), 1) 
+names(dna) <- chrom_map$bio_name[match(dna_ids, chrom_map$ncbi_id)]
+
+# 3.3 Padronizar VCF: Remover o prefixo 'chr' para ter '1c', '1e', etc.
+vcf_Cc@fix[, 'CHROM'] <- gsub("chr", "", getCHROM(vcf_Cc))
+
+# 3.4 Limpeza final: Remover qualquer elemento que não foi padronizado (virou NA)
+gff <- gff[!is.na(gff$seqid), ]
+dna <- dna[!is.na(names(dna))]
+vcf_Cc <- vcf_Cc[!is.na(getCHROM(vcf_Cc)), ]
+
+print("Nomes padronizados. Verificando o número de variantes restantes no VCF:")
+print(nrow(vcf_Cc@fix))
 
 
-dna <- read.dna("F:/Dados_projeto/analise_danubia/GCF_036785885.1_Coffea_Arabica_ET-39_HiFi_genomic.fna", format = "fasta")
+# --- PASSO 4: Criar o objeto ChromR e plotar ---
 
+print("---- PASSO 4: Preparando para criar o objeto chromR... ----")
 
-vcf_Cc <- read.vcfR("F:/Dados_projeto/analise_danubia/Ca_var_norm_filter_BIAL_QUAL_AF_NS_flex.vcf")
+# Selecionar a sequência de DNA para o cromossomo '1c'
+dna_1c <- dna[names(dna) == '1c']
 
+# Criar o objeto.
+chrom <- create.chromR(name = '1c', vcf = vcf_Cc, seq = dna_1c, ann = gff)
+png(filename = "grafico_qc_cromossomo_1c.png", width = 800, height = 1000)
 
-chrom <- create.chromR(name = 'NC_092310.1', vcf = vcf_Cc, seq = dna, ann = gff) 
-png(filename = "grafico_controle_qualidade_Cc.png", width = 1000, height = 800)
-chromoqc(chrom, dp.alpha = 20)
+# 2. Executa o comando para criar o gráfico.
+chromoqc(chrom, dp.alpha = 50)
+
+# 3. CRUCIAL: Fecha o dispositivo. Isso finaliza e salva o arquivo no seu computador.
 dev.off()
 
-
-plot(chrom)
-
-
-chromoqc(chrom, dp.alpha = 20) 
+# Gerar a visualização de controle de qualidade
+print("Objeto chromR criado com sucesso! Gerando o gráfico...")
+chromoqc(chrom, dp.alpha = 50)
 ```
 ```{r, cache=FALSE}
 # ler arquivos vcf
 
-vcf_Ca <- read.vcfR("F:/Dados_projeto/analise_danubia/Ca_var_norm_filter_BIAL_QUAL_AF_NS_flex.vcf", verbose = TRUE)
-vcf_Cc <- read.vcfR("F:/Dados_projeto/analise_danubia/Cc_var_norm_filter_BIAL_QUAL_AF_NS_flex.vcf", verbose = TRUE)
-vcf_Ce <- read.vcfR("F:/Dados_projeto/analise_danubia/Ce_var_norm_filter_BIAL_QUAL_AF_NS_flex.vcf", verbose = TRUE)
+vcf_Ca <- read.vcfR("Ca_var_norm_filter_BIAL_QUAL_AF_NS_flex.vcf", verbose = TRUE)
+vcf_Cc <- read.vcfR("Cc_var_norm_filter_BIAL_QUAL_AF_NS_flex.vcf", verbose = TRUE)
+vcf_Ce <- read.vcfR("Ce_var_norm_filter_BIAL_QUAL_AF_NS_flex.vcf", verbose = TRUE)
 
 #extrair contagem de reads do alelo alternativo
 AOmat_Ca <- extract.gt(vcf_Ca, element = "AO", as.numeric = TRUE)
@@ -131,17 +178,25 @@ library(stringr)
 counts2x$Chr <- as.integer(str_extract(counts2x$Var1, "\\d+")) # Extrai o número do cromossomo
 counts2x$Subgenome <- ifelse(grepl("c", counts2x$Var1, ignore.case = TRUE) & grepl("Cc", counts2x$Reference), "canephora",
                            ifelse(grepl("e", counts2x$Var1, ignore.case = TRUE) & grepl("Ce", counts2x$Reference), "eugenioides", "arabica"))
+library(ggplot2)
 
-A <- ggplot(counts2x, aes(x = Reference, y = Freq, fill = Subgenome, group = Reference)) +
-  geom_bar(position = position_stack(), stat="identity", alpha = 0.7) +
-  facet_grid(~ Chr, switch = "both") +
-  scale_y_continuous(expand = c(0,0)) +
-  scale_fill_manual(values = c("arabica" = "grey", "canephora" = "#993300", "eugenioides" = "#f5ad05")) +
-  labs(y = "Number of SNPs", x = "Reference Alignment") +
+# Filtrar o dataframe, coluna 'Chr' NÃO é NA.
+counts2x_filtered <- counts2x[!is.na(counts2x$Chr), ]
+
+
+B <- ggplot(counts2x_filtered, aes(x = as.factor(Chr), y = Freq, fill = Reference)) +
+  geom_bar(stat="identity", position = position_dodge(), alpha = 0.8) +
+  scale_fill_manual(values = c("Cc" = "#993300", "Ce" = "#f5ad05"),
+                    labels = c("Ref. Canephora", "Ref. Eugenioides")) +
+  labs(x = "Cromossomo", y = "Número de SNPs", fill = "Alinhamento de Referência") +
   theme_classic() +
-  theme(legend.position = "top", strip.background = element_blank(), strip.placement = "outside")
+  theme(axis.text = element_text(size = 10),
+        axis.title = element_text(size = 12, face = "bold"),
+        legend.position = "top");
 
-print(A)
+# Exibir o novo gráfico
+print(B)
 
-ggsave("contagem_snps_por_cromossomo.png", plot = A, width = 10, height = 5, dpi = 400)
+# Salvar o novo gráfico
+ggsave("contagem_snps_por_cromossomo_v2.png", plot = B, width = 10, height = 6, dpi = 400)
 ```
