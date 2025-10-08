@@ -63,20 +63,17 @@ gc(verbose = FALSE)
 
 ```{r, cache=FALSE}
 
-# --- VERSÃO FINAL E DEFINITIVA (v11) ---
-
-# Carregando os pacotes necessários
 library(vcfR)
 library(ape)
 library(stringr)
 library(ggplot2)
 
-# --- PASSO 1: Carregar os arquivos ---
+# Carregar os arquivos
 vcf_Cc <- vcfR::read.vcfR("Cc_var_norm_filter_BIAL_QUAL_AF_NS_flex.vcf")
 gff <- ape::read.gff("genomic.gff")
 dna <- ape::read.dna("GCF_036785885.1_Coffea_Arabica_ET-39_HiFi_genomic.fna", format = "fasta")
 
-# --- PASSO 2: Criar a tabela de mapeamento ---
+# Criar a tabela de mapeamento
 region_info <- gff[gff$type == "region", ]
 bio_names <- sapply(as.character(region_info$attributes), function(attr_string) {
   fields <- strsplit(attr_string, ";")[[1]]
@@ -90,23 +87,22 @@ chrom_map <- data.frame(
 )
 chrom_map <- chrom_map[chrom_map$bio_name != "Unknown", ]
 chrom_map <- na.omit(chrom_map)
+```
 
-# --- PASSO 3: PADRONIZAR NOMES DE CROMOSSOMOS EM TODOS OS OBJETOS ---
 
-print("---- PASSO 3: Padronizando nomes de cromossomos... ----")
-
-# 3.1 Padronizar GFF: Substituir 'NC_...' por '1c', '1e', etc.
+```{r, cache=FALSE}
+# Padronizar GFF: Substituir 'NC_...' por '1c', '1e', etc.
 gff_chroms <- as.character(gff$seqid)
 gff$seqid <- chrom_map$bio_name[match(gff_chroms, chrom_map$ncbi_id)]
 
-# 3.2 Padronizar DNA: Substituir 'NC_...' por '1c', '1e', etc.
+# Padronizar DNA: Substituir 'NC_...' por '1c', '1e', etc.
 dna_ids <- word(names(dna), 1) 
 names(dna) <- chrom_map$bio_name[match(dna_ids, chrom_map$ncbi_id)]
 
-# 3.3 Padronizar VCF: Remover o prefixo 'chr' para ter '1c', '1e', etc.
+# Padronizar VCF: Remover o prefixo 'chr' para ter '1c', '1e', etc.
 vcf_Cc@fix[, 'CHROM'] <- gsub("chr", "", getCHROM(vcf_Cc))
 
-# 3.4 Limpeza final: Remover qualquer elemento que não foi padronizado (virou NA)
+# Remover qualquer elemento que não foi padronizado (virou NA)
 gff <- gff[!is.na(gff$seqid), ]
 dna <- dna[!is.na(names(dna))]
 vcf_Cc <- vcf_Cc[!is.na(getCHROM(vcf_Cc)), ]
@@ -114,10 +110,6 @@ vcf_Cc <- vcf_Cc[!is.na(getCHROM(vcf_Cc)), ]
 print("Nomes padronizados. Verificando o número de variantes restantes no VCF:")
 print(nrow(vcf_Cc@fix))
 
-
-# --- PASSO 4: Criar o objeto ChromR e plotar ---
-
-print("---- PASSO 4: Preparando para criar o objeto chromR... ----")
 
 # Selecionar a sequência de DNA para o cromossomo '1c'
 dna_1c <- dna[names(dna) == '1c']
@@ -136,6 +128,7 @@ dev.off()
 print("Objeto chromR criado com sucesso! Gerando o gráfico...")
 chromoqc(chrom, dp.alpha = 50)
 ```
+
 ```{r, cache=FALSE}
 # ler arquivos vcf
 
@@ -199,4 +192,221 @@ print(B)
 
 # Salvar o novo gráfico
 ggsave("contagem_snps_por_cromossomo_v2.png", plot = B, width = 10, height = 6, dpi = 400)
+```
+
+```{r, cache=FALSE}
+vcf_Cc <- read.vcfR("Cc_var_norm_filter_BIAL_QUAL_AF_NS_flex.vcf", verbose = TRUE)
+vcf_Ce <- read.vcfR("Ce_var_norm_filter_BIAL_QUAL_AF_NS_flex.vcf", verbose = TRUE)
+vcf_Ca <- read.vcfR("Ca_var_norm_filter_BIAL_QUAL_AF_NS_flex.vcf", verbose = TRUE)
+
+GTmat_Cc4 <- extract.gt(vcf_Cc, element = "GT", as.numeric = FALSE); GTmat_Cc4[1:10,1:5]; dim(GTmat_Cc4); table(GTmat_Cc4)
+
+AOmat_Ca <- extract.gt(vcf_Ca, element = "AO", as.numeric = TRUE)
+AOmat_Cc <- extract.gt(vcf_Cc, element = "AO", as.numeric = TRUE)
+AOmat_Ce <- extract.gt(vcf_Ce, element = "AO", as.numeric = TRUE)
+DPmat_Ca <- extract.gt(vcf_Ca, element = "DP", as.numeric = TRUE)
+DPmat_Cc <- extract.gt(vcf_Cc, element = "DP", as.numeric = TRUE)
+DPmat_Ce <- extract.gt(vcf_Ce, element = "DP", as.numeric = TRUE)
+
+rm(vcf_Ca, vcf_Cc, vcf_Ce); gc(verbose = FALSE)
+
+```
+```{r, cache=FALSE}
+dim(DPmat_Ca)
+dim(DPmat_Cc)
+dim(DPmat_Ce)
+hist(DPmat_Ca, breaks = 300)
+hist(DPmat_Ce, breaks = 300)
+hist(DPmat_Cc, breaks = 300)
+
+widemat_Ca <- data.frame(SNP=rownames(DPmat_Ca), Reference = "Ca", DPmat_Ca)
+widemat_Ce <- data.frame(SNP=rownames(DPmat_Ce), Reference = "Ce", DPmat_Ce)
+widemat_Cc <- data.frame(SNP=rownames(DPmat_Cc), Reference = "Cc", DPmat_Cc)
+
+longmat_Ca <- tidyr::pivot_longer(as.data.frame(widemat_Ca), cols = -c(1:2), names_to = "Amostra", values_to = "DP")
+longmat_Ce <- tidyr::pivot_longer(as.data.frame(widemat_Ce), cols = -c(1:2), names_to = "Amostra", values_to = "DP")
+longmat_Cc <- tidyr::pivot_longer(as.data.frame(widemat_Cc), cols = -c(1:2), names_to = "Amostra", values_to = "DP")
+
+longmat <- rbind(longmat_Cc, longmat_Ce, longmat_Ca)
+```
+```{r, cache=FALSE}
+A <- ggplot(longmat) +
+  geom_histogram(aes(x = DP, fill = Reference), position = "identity", bins = 200, alpha = 0.7) +
+  facet_grid(Reference ~ ., scales = "free_y") + # Painéis separados para cada referência
+  scale_fill_manual(values = c("Ca" = "grey", "Cc" = "#993300", "Ce" = "#f5ad05")) +
+  scale_x_continuous(limits = c(0, 200), expand = c(0,0)) + # Focando em profundidades de 0 a 200
+  labs(x = "Profundidade de Leitura (DP)", y = "Frequência") +
+  theme_classic()
+
+
+B <- ggplot(longmat) +
+  geom_boxplot(aes(y = Reference, x = DP, fill = Reference)) +
+  scale_fill_manual(values = c("Ca" = "grey", "Cc" = "#993300", "Ce" = "#f5ad05")) +
+  scale_x_continuous(limits = c(0, 200), expand = c(0,0)) +
+  labs(x = "Profundidade de Leitura (DP)", y = "") +
+  theme_classic() +
+  theme(legend.position = "none")
+
+# Combinando os dois gráficos em uma única figura
+cowplot::plot_grid(B, A, ncol = 1, rel_heights = c(0.7, 2), align = 'v', axis = 'lr')
+ggsave("distribuicao_profundidade_leitura.png", width = 8, height = 6, dpi = 300)
+
+
+tapply(longmat$DP, longmat$Reference, median, na.rm = TRUE)
+```
+```{r, cache=FALSE}
+
+# contagem de reads do alelo referencia 
+ROmat_Cc <- DPmat_Cc - AOmat_Cc
+ROmat_Ce <- DPmat_Ce - DPmat_Ce
+
+#calculo de cobertura para cada genótipo
+ROmat2_Cc <- ROmat_Cc^2
+ROmat2_Ce <- ROmat_Ce^2
+AOmat2_Cc <- AOmat_Cc^2
+AOmat2_Ce <- AOmat_Ce^2
+
+SQmat_Cc <- sqrt(AOmat2_Cc + ROmat2_Cc)
+SQmat_Ce <- sqrt(AOmat2_Ce + ROmat2_Ce)
+
+# -- Para o alinhamento Canephora (Cc) --
+cat("\nIniciando filtro adaptativo para Cc...\n")
+# Checando o número de NAs ANTES do filtro.
+cat("NAs em DPmat_Cc ANTES:", sum(is.na(DPmat_Cc)), "\n")
+
+for (m in 1:nrow(DPmat_Cc)) {
+  median_coverage <- median(SQmat_Cc[m,], na.rm = TRUE)
+  exclude <- which(SQmat_Cc[m,] < (0.10* median_coverage)) 
+  DPmat_Cc[m, exclude] <- NA
+  AOmat_Cc[m, exclude] <- NA
+}
+
+cat("NAs em DPmat_Cc DEPOIS:", sum(is.na(DPmat_Cc)), "\n")
+
+for (m in 1:nrow(DPmat_Ce)) {
+  media_coverage <- median(SQmat_Ce[m,], na.rm = TRUE)
+  exclude <- which(SQmat_Ce[m,] < (0.10*media_coverage))
+  DPmat_Ce[m, exclude] <- NA
+  AOmat_Ce[m, exclude] <- NA
+}
+
+rm(ROmat_Cc, ROmat2_Cc, AOmat2_Cc, SQmat_Cc); gc(verbose = FALSE)
+rm(ROmat_Ce, ROmat2_Ce, AOmat2_Ce, SQmat_Ce); gc(verbose = FALSE)
+```
+```{r, cache=FALSE}
+
+
+count.na <- function(x) { sum(is.na(x)) }
+
+
+cat("\nFiltrando indivíduos com mais de 25% de dados faltantes...\n")
+# 'apply(DPmat_Cc, 2, ...)' aplica a função a cada coluna (2 = colunas).
+# Conta NAs para cada indivíduo.
+ind.nas_Cc <- apply(DPmat_Cc, 2, count.na)
+ind.nas_Ce <- apply(DPmat_Ce, 2, count.na)
+
+# Remover individuos se tiver mais de 25% de NAs.
+threshold_ind_Cc <- nrow(DPmat_Cc) * 0.25
+threshold_ind_Ce <- nrow(DPmat_Ce) * 0.25
+ind_to_remove_Cc <- which(ind.nas_Cc > threshold_ind_Cc)
+ind_to_remove_Ce <- which(ind.nas_Ce > threshold_ind_Ce)
+
+cat("Indivíduos a remover de Cc:", length(ind_to_remove_Cc), "\n")
+cat("Indivíduos a remover de Ce:", length(ind_to_remove_Ce), "\n")
+
+# Se houver indivíduos para remover, removemos.
+if(length(ind_to_remove_Cc) > 0) {
+  AOmat_Cc <- AOmat_Cc[, -ind_to_remove_Cc]
+  DPmat_Cc <- DPmat_Cc[, -ind_to_remove_Cc]
+}
+if(length(ind_to_remove_Ce) > 0) {
+  AOmat_Ce <- AOmat_Ce[, -ind_to_remove_Ce]
+  DPmat_Ce <- DPmat_Ce[, -ind_to_remove_Ce]
+}
+
+
+
+cat("\nFiltrando marcadores com mais de 25% de dados faltantes...\n")
+# 'apply(DPmat_Cc, 1, ...)' aplica a função a cada linha (1 = linhas).
+# Conta NAs para cada marcador.
+mrk.nas_Cc <- apply(DPmat_Cc, 1, count.na)
+mrk.nas_Ce <- apply(DPmat_Ce, 1, count.na)
+
+# Define os marcadores a serem removidos.
+threshold_mrk_Cc <- ncol(DPmat_Cc) * 0.25
+threshold_mrk_Ce <- ncol(DPmat_Ce) * 0.25
+mrk_to_remove_Cc <- which(mrk.nas_Cc > threshold_mrk_Cc)
+mrk_to_remove_Ce <- which(mrk.nas_Ce > threshold_mrk_Ce)
+
+cat("Marcadores a remover de Cc:", length(mrk_to_remove_Cc), "\n")
+cat("Marcadores a remover de Ce:", length(mrk_to_remove_Ce), "\n")
+
+# Remove as linhas (marcadores) identificadas.
+if(length(mrk_to_remove_Cc) > 0) {
+  AOmat_Cc <- AOmat_Cc[-mrk_to_remove_Cc, ]
+  DPmat_Cc <- DPmat_Cc[-mrk_to_remove_Cc, ]
+}
+if(length(mrk_to_remove_Ce) > 0) {
+  AOmat_Ce <- AOmat_Ce[-mrk_to_remove_Ce, ]
+  DPmat_Ce <- DPmat_Ce[-mrk_to_remove_Ce, ]
+}
+
+
+cat("\nDimensões finais das matrizes:\n")
+cat("AOmat_Cc:", dim(AOmat_Cc), "\n")
+cat("DPmat_Cc:", dim(DPmat_Cc), "\n")
+cat("AOmat_Ce:", dim(AOmat_Ce), "\n")
+cat("DPmat_Ce:", dim(DPmat_Ce), "\n")
+
+# Salva as matrizes limpas em arquivos para uso futuro.
+save(AOmat_Cc, DPmat_Cc, file = "matrizes_filtradas_Cc.rda")
+save(AOmat_Ce, DPmat_Ce, file = "matrizes_filtradas_Ce.rda")
+
+# Limpa a memória.
+rm(AOmat_Cc, DPmat_Cc, AOmat_Ce, DPmat_Ce); gc(verbose = FALSE)
+```
+```{r, cache=FALSE}
+
+library(updog)
+
+
+nc <- parallel::detectCores() - 1
+cat("Usando", nc, "núcleos para o processamento.\n")
+
+
+
+cat("\nCarregando dados filtrados de Cc e iniciando updog...\n")
+load("matrizes_filtradas_Cc.rda")
+cat("Dimensões dos dados de entrada (SNPs x Amostras):", dim(AOmat_Cc), "\n")
+
+# Executa o modelo multidog.
+mout_Cc <- multidog(refmat = AOmat_Cc, 
+                    sizemat = DPmat_Cc, 
+                    ploidy = 4, 
+                    model = "s1pp", 
+                    nc = nc)
+
+cat("Análise de Cc concluída. Salvando resultados...\n")
+save(mout_Cc, file="mout_Cc.rda")
+# Limpa a memória antes de começar o próximo.
+rm(mout_Cc, AOmat_Cc, DPmat_Cc); gc(verbose = FALSE)
+cat("Resultados de Cc salvos em 'mout_Cc.rda'.\n")
+
+
+# -- Processando o alinhamento Eugenioides (Ce) --
+cat("\nCarregando dados filtrados de Ce e iniciando updog...\n")
+load("matrizes_filtradas_Ce.rda")
+cat("Dimensões dos dados de entrada (SNPs x Amostras):", dim(AOmat_Ce), "\n")
+
+# Executa o modelo multidog.
+mout_Ce <- multidog(refmat = AOmat_Ce, 
+                    sizemat = DPmat_Ce, 
+                    ploidy = 4, 
+                    model = "s1pp", 
+                    nc = nc)
+
+cat("Análise de Ce concluída. Salvando resultados...\n")
+save(mout_Ce, file="mout_Ce.rda")
+rm(mout_Ce, AOmat_Ce, DPmat_Ce); gc(verbose = FALSE)
+cat("Resultados de Ce salvos em 'mout_Ce.rda'.\n")
 ```
