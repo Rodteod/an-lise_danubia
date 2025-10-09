@@ -365,10 +365,9 @@ save(AOmat_Ce, DPmat_Ce, file = "matrizes_filtradas_Ce.rda")
 # Limpa a memória.
 rm(AOmat_Cc, DPmat_Cc, AOmat_Ce, DPmat_Ce); gc(verbose = FALSE)
 ```
-```{r, cache=FALSE}
+```{r,cache=FALSE}
 
 library(updog)
-
 
 nc <- parallel::detectCores() - 1
 cat("Usando", nc, "núcleos para o processamento.\n")
@@ -410,3 +409,4 @@ save(mout_Ce, file="mout_Ce.rda")
 rm(mout_Ce, AOmat_Ce, DPmat_Ce); gc(verbose = FALSE)
 cat("Resultados de Ce salvos em 'mout_Ce.rda'.\n")
 ```
+

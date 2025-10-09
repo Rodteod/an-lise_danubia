@@ -1,6 +1,24 @@
+# Arquivos de sistema do RStudio e temporários
 .Rproj.user
 .Rhistory
 .RData
-.httr-oauth
-.DS_Store
 .quarto
+.DS_Store
+.httr-oauth
+
+# ----------------------------------------------------
+# REGRAS ADICIONADAS POR NÓS PARA IGNORAR DADOS E SAÍDAS
+# ----------------------------------------------------
+
+# Ignorar arquivos de dados brutos (grandes)
+*.vcf
+*.gff
+*.fna
+
+# Ignorar arquivos binários do R (podem ficar grandes)
+*.rda
+
+# Ignorar arquivos de saída (gráficos, relatórios, etc.)
+*.png
+*.pdf
+*.html
