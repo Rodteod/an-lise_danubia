@@ -259,15 +259,20 @@ tapply(longmat$DP, longmat$Reference, median, na.rm = TRUE)
 # contagem de reads do alelo referencia 
 ROmat_Cc <- DPmat_Cc - AOmat_Cc
 ROmat_Ce <- DPmat_Ce - DPmat_Ce
+ROmat_Ca <- DPmat_Ca - DPmat_Ca
+
 
 #calculo de cobertura para cada genótipo
 ROmat2_Cc <- ROmat_Cc^2
 ROmat2_Ce <- ROmat_Ce^2
+ROmat2_Ca <- ROmat_Ca^2
 AOmat2_Cc <- AOmat_Cc^2
 AOmat2_Ce <- AOmat_Ce^2
+AOmat2_Ca <- AOmat_Ca^2
 
 SQmat_Cc <- sqrt(AOmat2_Cc + ROmat2_Cc)
 SQmat_Ce <- sqrt(AOmat2_Ce + ROmat2_Ce)
+SQmat_Ca <- sqrt(AOmat2_Ca + ROmat2_Ca)
 
 # -- Para o alinhamento Canephora (Cc) --
 cat("\nIniciando filtro adaptativo para Cc...\n")
@@ -290,8 +295,17 @@ for (m in 1:nrow(DPmat_Ce)) {
   AOmat_Ce[m, exclude] <- NA
 }
 
+for (m in 1:nrow(DPmat_Ca)) {
+  media_coverage <- median(SQmat_Ca[m,], na.rm = TRUE)
+  exclude <- which(SQmat_Ca[m,] < (0.10*media_coverage))
+  DPmat_Ca[m, exclude] <- NA
+  AOmat_Ca[m, exclude] <- NA
+}
+
 rm(ROmat_Cc, ROmat2_Cc, AOmat2_Cc, SQmat_Cc); gc(verbose = FALSE)
 rm(ROmat_Ce, ROmat2_Ce, AOmat2_Ce, SQmat_Ce); gc(verbose = FALSE)
+rm(ROmat_Ca, ROmat2_Ca, AOmat2_Ca, SQmat_Ca); gc(verbose = FALSE)
+
 ```
 ```{r, cache=FALSE}
 
@@ -304,15 +318,19 @@ cat("\nFiltrando indivíduos com mais de 25% de dados faltantes...\n")
 # Conta NAs para cada indivíduo.
 ind.nas_Cc <- apply(DPmat_Cc, 2, count.na)
 ind.nas_Ce <- apply(DPmat_Ce, 2, count.na)
+ind.nas_Ca <- apply(DPmat_Ca, 2, count.na)
 
 # Remover individuos se tiver mais de 25% de NAs.
 threshold_ind_Cc <- nrow(DPmat_Cc) * 0.25
 threshold_ind_Ce <- nrow(DPmat_Ce) * 0.25
+threshold_ind_Ca <- nrow(DPmat_Ca) * 0.25
 ind_to_remove_Cc <- which(ind.nas_Cc > threshold_ind_Cc)
 ind_to_remove_Ce <- which(ind.nas_Ce > threshold_ind_Ce)
+ind_to_remove_Ca <- which(ind.nas_Ca > threshold_ind_Ca)
 
 cat("Indivíduos a remover de Cc:", length(ind_to_remove_Cc), "\n")
 cat("Indivíduos a remover de Ce:", length(ind_to_remove_Ce), "\n")
+cat("Indivíduos a remover de Ca:", length(ind_to_remove_Ca), "\n")
 
 # Se houver indivíduos para remover, removemos.
 if(length(ind_to_remove_Cc) > 0) {
@@ -324,22 +342,30 @@ if(length(ind_to_remove_Ce) > 0) {
   DPmat_Ce <- DPmat_Ce[, -ind_to_remove_Ce]
 }
 
-
+if(length(ind_to_remove_Ce) > 0) {
+  AOmat_Ca <- AOmat_Ca[, -ind_to_remove_Ca]
+  DPmat_Ca <- DPmat_Ca[, -ind_to_remove_Ca]
+}
 
 cat("\nFiltrando marcadores com mais de 25% de dados faltantes...\n")
 # 'apply(DPmat_Cc, 1, ...)' aplica a função a cada linha (1 = linhas).
 # Conta NAs para cada marcador.
 mrk.nas_Cc <- apply(DPmat_Cc, 1, count.na)
 mrk.nas_Ce <- apply(DPmat_Ce, 1, count.na)
+mrk.nas_Ca <- apply(DPmat_Ca, 1, count.na)
 
 # Define os marcadores a serem removidos.
 threshold_mrk_Cc <- ncol(DPmat_Cc) * 0.25
 threshold_mrk_Ce <- ncol(DPmat_Ce) * 0.25
+threshold_mrk_Ca <- ncol(DPmat_Ca) * 0.25
+
 mrk_to_remove_Cc <- which(mrk.nas_Cc > threshold_mrk_Cc)
 mrk_to_remove_Ce <- which(mrk.nas_Ce > threshold_mrk_Ce)
+mrk_to_remove_Ca <- which(mrk.nas_Ca > threshold_mrk_Ca)
 
 cat("Marcadores a remover de Cc:", length(mrk_to_remove_Cc), "\n")
 cat("Marcadores a remover de Ce:", length(mrk_to_remove_Ce), "\n")
+cat("Marcadores a remover de Ca:", length(mrk_to_remove_Ca), "\n")
 
 # Remove as linhas (marcadores) identificadas.
 if(length(mrk_to_remove_Cc) > 0) {
@@ -351,16 +377,23 @@ if(length(mrk_to_remove_Ce) > 0) {
   DPmat_Ce <- DPmat_Ce[-mrk_to_remove_Ce, ]
 }
 
+if(length(mrk_to_remove_Ca) > 0) {
+  AOmat_Ca <- AOmat_Ca[-mrk_to_remove_Ca, ]
+  DPmat_Ca <- DPmat_Ca[-mrk_to_remove_Ca, ]
+}
 
 cat("\nDimensões finais das matrizes:\n")
 cat("AOmat_Cc:", dim(AOmat_Cc), "\n")
 cat("DPmat_Cc:", dim(DPmat_Cc), "\n")
 cat("AOmat_Ce:", dim(AOmat_Ce), "\n")
 cat("DPmat_Ce:", dim(DPmat_Ce), "\n")
+cat("AOmat_Ca:", dim(AOmat_Ca), "\n")
+cat("DPmat_Ca:", dim(DPmat_Ca), "\n")
 
 # Salva as matrizes limpas em arquivos para uso futuro.
 save(AOmat_Cc, DPmat_Cc, file = "matrizes_filtradas_Cc.rda")
 save(AOmat_Ce, DPmat_Ce, file = "matrizes_filtradas_Ce.rda")
+save(AOmat_Ca, DPmat_Ca, file = "matrizes_filtradas_Ca.rda")
 
 # Limpa a memória.
 rm(AOmat_Cc, DPmat_Cc, AOmat_Ce, DPmat_Ce); gc(verbose = FALSE)
@@ -409,4 +442,22 @@ save(mout_Ce, file="mout_Ce.rda")
 rm(mout_Ce, AOmat_Ce, DPmat_Ce); gc(verbose = FALSE)
 cat("Resultados de Ce salvos em 'mout_Ce.rda'.\n")
 ```
+```{r, cache=FALSE}
+library(updog)
 
+nc <- parallel::detectCores() - 1
+cat("Usando", nc, "núcleos para o processamento.\n")
+
+
+
+cat("\nCarregando dados filtrados de Cc e iniciando updog...\n")
+load("matrizes_filtradas_Cc.rda")
+cat("Dimensões dos dados de entrada (SNPs x Amostras):", dim(AOmat_Ca), "\n")
+
+# Executa o modelo multidog.
+mout_Ca <- multidog(refmat = AOmat_Ca, 
+                    sizemat = DPmat_Ca, 
+                    ploidy = 4, 
+                    model = "s1pp", 
+                    nc = nc)
+```
