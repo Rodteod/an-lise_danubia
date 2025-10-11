@@ -395,9 +395,10 @@ save(AOmat_Cc, DPmat_Cc, file = "matrizes_filtradas_Cc.rda")
 save(AOmat_Ce, DPmat_Ce, file = "matrizes_filtradas_Ce.rda")
 save(AOmat_Ca, DPmat_Ca, file = "matrizes_filtradas_Ca.rda")
 
-# Limpa a memória.
-rm(AOmat_Cc, DPmat_Cc, AOmat_Ce, DPmat_Ce); gc(verbose = FALSE)
+
+
 ```
+
 ```{r,cache=FALSE}
 
 library(updog)
@@ -411,7 +412,7 @@ cat("\nCarregando dados filtrados de Cc e iniciando updog...\n")
 load("matrizes_filtradas_Cc.rda")
 cat("Dimensões dos dados de entrada (SNPs x Amostras):", dim(AOmat_Cc), "\n")
 
-# Executa o modelo multidog.
+
 mout_Cc <- multidog(refmat = AOmat_Cc, 
                     sizemat = DPmat_Cc, 
                     ploidy = 4, 
@@ -425,12 +426,12 @@ rm(mout_Cc, AOmat_Cc, DPmat_Cc); gc(verbose = FALSE)
 cat("Resultados de Cc salvos em 'mout_Cc.rda'.\n")
 
 
-# -- Processando o alinhamento Eugenioides (Ce) --
+# alinhamento Eugenioides (Ce) 
 cat("\nCarregando dados filtrados de Ce e iniciando updog...\n")
 load("matrizes_filtradas_Ce.rda")
 cat("Dimensões dos dados de entrada (SNPs x Amostras):", dim(AOmat_Ce), "\n")
 
-# Executa o modelo multidog.
+
 mout_Ce <- multidog(refmat = AOmat_Ce, 
                     sizemat = DPmat_Ce, 
                     ploidy = 4, 
@@ -442,6 +443,8 @@ save(mout_Ce, file="mout_Ce.rda")
 rm(mout_Ce, AOmat_Ce, DPmat_Ce); gc(verbose = FALSE)
 cat("Resultados de Ce salvos em 'mout_Ce.rda'.\n")
 ```
+
+
 ```{r, cache=FALSE}
 library(updog)
 
@@ -451,7 +454,7 @@ cat("Usando", nc, "núcleos para o processamento.\n")
 
 
 cat("\nCarregando dados filtrados de Cc e iniciando updog...\n")
-load("matrizes_filtradas_Cc.rda")
+load("matrizes_filtradas_Ca.rda")
 cat("Dimensões dos dados de entrada (SNPs x Amostras):", dim(AOmat_Ca), "\n")
 
 # Executa o modelo multidog.
@@ -460,4 +463,43 @@ mout_Ca <- multidog(refmat = AOmat_Ca,
                     ploidy = 4, 
                     model = "s1pp", 
                     nc = nc)
+cat("Análise de Ca concluída. Salvando resultados...\n")
+save(mout_Ca, file="mout_Ca.rda")
+rm(mout_Ca, AOmat_Ca, DPmat_Ca); gc(verbose = FALSE)
+cat("Resultados de Ce salvos em 'mout_Ce.rda'.\n")
+```
+
+```{r, eval=FALSE}
+library(updog)
+
+load("mout_Cc.rda")
+nmrk <- length(mout_Cc$snpdf$snp)
+indices <- split(1:nmrk, ceiling(1:nmrk/100))
+dir.create(path = "plots_Cc", showWarnings = FALSE)
+for(i in 1:length(indices)) {
+  pdf(paste0("plots_Cc/mout_Cc_",i,".pdf"), width = 6, height = 5)
+  print(plot(mout_Cc, indices=indices[[i]]))
+  dev.off()
+}
+
+load("mout_Ce.rda")
+nmrk <- length(mout_Ce$snpdf$snp)
+indices <- split(1:nmrk, ceiling(1:nmrk/100))
+dir.create(path = "plots_Ce", showWarnings = FALSE)
+for(i in 1:length(indices)) {
+  pdf(paste0("plots_Ce/mout_Ce_",i,".pdf"), width = 6, height = 5)
+  print(plot(mout_Ce, indices=indices[[i]]))
+  dev.off()
+}
+
+load("mout_Ca.rda")
+nmrk <- length(mout_Ca$snpdf$snp)
+indices <- split(1:nmrk, ceiling(1:nmrk/100))#Lista: cada elemento em um vetor com 100 SNPs
+dir.create(path = "plots_Ca", showWarnings = FALSE) #cria uma pasta
+
+for(i in 1:length(indices)) {
+  pdf(paste0("plots_Ca/mout_Ca_",i,".pdf"), width = 6, height = 5)
+  print(plot(mout_Ca, indices=indices[[i]]))
+  dev.off()
+}
 ```
