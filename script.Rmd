@@ -141,7 +141,7 @@ AOmat_Ca <- extract.gt(vcf_Ca, element = "AO", as.numeric = TRUE)
 AOmat_Cc <- extract.gt(vcf_Cc, element = "AO", as.numeric = TRUE)
 AOmat_Ce <- extract.gt(vcf_Ce, element = "AO", as.numeric = TRUE)
 
-#extraindo profundidade
+#extrair profundidade
 
 DPmat_Ca <- extract.gt(vcf_Ca, element = "DP", as.numeric = TRUE)
 DPmat_Cc <- extract.gt(vcf_Cc, element = "DP", as.numeric = TRUE)
@@ -234,7 +234,7 @@ A <- ggplot(longmat) +
   geom_histogram(aes(x = DP, fill = Reference), position = "identity", bins = 200, alpha = 0.7) +
   facet_grid(Reference ~ ., scales = "free_y") + # Painéis separados para cada referência
   scale_fill_manual(values = c("Ca" = "grey", "Cc" = "#993300", "Ce" = "#f5ad05")) +
-  scale_x_continuous(limits = c(0, 200), expand = c(0,0)) + # Focando em profundidades de 0 a 200
+ # scale_x_continuous(limits = c(0, 200), expand = c(0,0)) + # Focando em profundidades de 0 a 200
   labs(x = "Profundidade de Leitura (DP)", y = "Frequência") +
   theme_classic()
 
@@ -242,7 +242,7 @@ A <- ggplot(longmat) +
 B <- ggplot(longmat) +
   geom_boxplot(aes(y = Reference, x = DP, fill = Reference)) +
   scale_fill_manual(values = c("Ca" = "grey", "Cc" = "#993300", "Ce" = "#f5ad05")) +
-  scale_x_continuous(limits = c(0, 200), expand = c(0,0)) +
+  #scale_x_continuous(limits = c(0, 200), expand = c(0,0)) +
   labs(x = "Profundidade de Leitura (DP)", y = "") +
   theme_classic() +
   theme(legend.position = "none")
@@ -496,10 +496,24 @@ load("mout_Ca.rda")
 nmrk <- length(mout_Ca$snpdf$snp)
 indices <- split(1:nmrk, ceiling(1:nmrk/100))#Lista: cada elemento em um vetor com 100 SNPs
 dir.create(path = "plots_Ca", showWarnings = FALSE) #cria uma pasta
-
 for(i in 1:length(indices)) {
   pdf(paste0("plots_Ca/mout_Ca_",i,".pdf"), width = 6, height = 5)
   print(plot(mout_Ca, indices=indices[[i]]))
   dev.off()
 }
+```
+
+
+
+```{r}
+
+```
+
+```{r}
+
+
+```
+
+```{r}
+
 ```
