@@ -506,14 +506,137 @@ for(i in 1:length(indices)) {
 
 
 ```{r}
+drawsp <- function(vcf, snp, ploidy = 4, color = col_pal, title = "") {
+  
+  # A conversão para tidy cria uma lista com 'fix' e 'dat'
+  vcf_long <- vcfR2tidy(vcf, single_frame = TRUE)
+  
+  # Verifique se o VCF tem dados
+  if (nrow(vcf_long$fix) == 0) {
+    warning(paste("O VCF parece estar vazio para o SNP:", snp))
+    return(ggplot() + labs(title = "Dados não encontrados no VCF"))
+  }
 
+  # --- INÍCIO DA CORREÇÃO PRINCIPAL ---
+
+  # Passo A: Junte (faça o 'join') os dataframes 'fix' e 'dat'
+  # O 'join' é feito usando as colunas 'CHROM' e 'POS' que são comuns a ambos
+  full_df <- dplyr::left_join(vcf_long$dat, vcf_long$fix, by = c("CHROM", "POS"))
+
+  # Passo B: Crie a coluna ID no novo dataframe combinado
+  full_df$ID <- paste(full_df$CHROM, full_df$POS, sep = "_")
+  
+  # Passo C: Filtre o dataframe combinado
+  dfdat <- full_df %>% dplyr::filter(ID == snp)
+
+  # --- FIM DA CORREÇÃO PRINCIPAL ---
+  
+  # Verifique se a filtragem encontrou algo
+  if (nrow(dfdat) == 0) {
+    warning(paste("Nenhum dado encontrado para o SNP", snp, "no VCF. Verifique o nome."))
+    return(ggplot() + labs(title = paste("SNP:", snp, "\nNão encontrado no VCF")))
+  }
+  
+  # O resto da sua função pode permanecer exatamente o mesmo
+  # Conversão para numérico (já estava na sua função)
+  dfdat$gt_RO <- as.numeric(dfdat$gt_RO)
+  dfdat$gt_AO <- as.numeric(dfdat$gt_AO)
+  
+  # Cálculo da dose
+  dfdat$Dose <- factor(unlist(lapply(lapply(strsplit(dfdat$gt_GT, "/"), as.integer), sum)), ordered = TRUE)
+  
+  # Lógica de plotagem
+  maxcount <- max(max(dfdat$gt_RO, na.rm = TRUE), max(dfdat$gt_AO, na.rm = TRUE), na.rm = TRUE) + 1
+  if (!is.finite(maxcount)) maxcount <- 100 
+  
+  pk <- (0:ploidy)/ploidy
+  slopevec <- pk/(1 - pk)
+  xend <- pmin(rep(maxcount, ploidy + 1), maxcount/slopevec)
+  yend <- pmin(rep(maxcount, ploidy + 1), maxcount * slopevec)
+  df_lines <- data.frame(x = rep(0, ploidy + 1), y = rep(0, ploidy + 1), xend = xend, yend = yend)
+  
+  p <- ggplot(dfdat) +
+    geom_point(aes(x = gt_RO, y = gt_AO, color = Dose), na.rm = TRUE) +
+    geom_segment(data = df_lines, mapping = aes(x = 0, y = 0, xend = xend, yend = yend), lty = 2, alpha = 1/2, color = "black", linewidth = 0.5) +
+    scale_color_manual(values = col_pal, drop = FALSE, na.translate = FALSE) +
+    labs(title = ifelse(isTRUE(title), snp, "")) + 
+    theme_bw() + 
+    theme(plot.title = element_text(size=10, hjust = c(.5,.5)))
+  
+  return(p)
+}
 ```
 
 ```{r}
+load("mout_Cc.rda")
+
+library(vcfR)
+
+vcf_Cc_raw <- read.vcfR("Cc_var_norm_filter_BIAL_QUAL_AF_NS_flex.vcf", verbose = FALSE)
+
+snp_metrics_Cc <- mout_Cc$snpdf
+
+summary(snp_metrics_Cc[, c( "bias", "od", "prop_mis")])
+
+best_snps <- snp_metrics_Cc %>% 
+  dplyr::filter(prop_mis < 0.02, bias > 0.9, bias < 1.1, od < 0.01) %>% # filtra os SNPs
+  dplyr::slice_sample(n=5) %>% # pega 5 exemplos aleatórios 
+  dplyr::pull(snp) #extrai apenas o nome dos SNPs
+
+print(best_snps)
+
+biased_snps <- snp_metrics_Cc %>%
+  dplyr::filter(prop_mis < 0.1, bias > 1.5 | bias < 0.7) %>%
+  dplyr::slice_sample(n = 5) %>%
+  dplyr::pull(snp)
+
+print(biased_snps)
+```
 
 
+```{r,cache=FALSE}
+col_pal = c(`0`="#E69F00", `1`="#56B4E9", `2`="#009E73", `3`="#CC46A7", `4`="#999999", `NA` = "grey50")
+dir.create("diagnostico_snps", showWarnings = FALSE)
+dir.create("diagnostico_snps/melhores_snps_Cc", showWarnings = FALSE)
+dir.create("diagnostico_snps/snps_com_vies_Cc", showWarnings = FALSE)
+
+for (snp_id in best_snps) {
+  
+  # Gráfico 1: Genotipagem bruta do VCF (usando sua função)
+  p1 <- drawsp(vcf = vcf_Cc_raw, snp = snp_id, ploidy = 4, title = TRUE) + labs(x = "Reads Ref.", y = "Reads Alt.")
+  
+  # Gráfico 2: Genotipagem do updog
+ p2 <- updog:::plot.multidog(mout_Cc, indices = which(mout_Cc$snpdf$snp == snp_id))[[1]] +
+      scale_color_manual(values = col_pal, drop = FALSE, na.translate = FALSE) +
+      labs(color = "Dose (updog)", alpha = "Prob. Post.") +
+      theme(legend.position="top", plot.title = element_blank())
+    
+  # Combina os dois gráficos
+  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("VCF Bruto", "Updog"), common.legend = TRUE, legend = "bottom")
+  
+  # Salva o gráfico combinado em um arquivo
+  ggsave(filename = paste0("diagnostico_snps/melhores_snps_Cc/", snp_id, ".png"),
+    plot = combined_plot,
+    width = 10, height = 5, dpi = 150
+  )
+}
 ```
 
 ```{r}
+# ...
+# Gráfico 1: Genotipagem bruta do VCF (usando sua função)
+p1 <- drawsp(vcf = vcf_Cc_raw, snp = snp_id, ploidy = 4, title = TRUE) + 
+      labs(x = "Reads Ref.", y = "Reads Alt.")
+
+# Gráfico 2: Genotipagem do updog
+# O [[1]] AQUI É ESSENCIAL para extrair o gráfico da lista.
+p2 <- plot(mout_Cc, indices = which(mout_Cc$snpdf$snp == snp_id))[[1]] +
+      scale_color_manual(values = col_pal, drop = FALSE, na.translate = FALSE) +
+      labs(color = "Dose (updog)", alpha = "Prob. Post.") +
+      theme(legend.position="top", plot.title = element_blank())
+
+# Combina os dois gráficos
+combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("VCF Bruto", "Updog"), 
+                                   common.legend = TRUE, legend = "bottom")
 
 ```
