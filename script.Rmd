@@ -180,8 +180,8 @@ counts2x_filtered <- counts2x[!is.na(counts2x$Chr), ]
 B <- ggplot(counts2x_filtered, aes(x = as.factor(Chr), y = Freq, fill = Reference)) +
   geom_bar(stat="identity", position = position_dodge(), alpha = 0.8) +
   scale_fill_manual(values = c("Cc" = "#993300", "Ce" = "#f5ad05"),
-                    labels = c("Ref. Canephora", "Ref. Eugenioides")) +
-  labs(x = "Cromossomo", y = "Número de SNPs", fill = "Alinhamento de Referência") +
+                    labels = c("Canephora", "Eugenioides")) +
+  labs(x = "Chromosome", y = "Number of SNPs", fill = "Reference") +
   theme_classic() +
   theme(axis.text = element_text(size = 10),
         axis.title = element_text(size = 12, face = "bold"),
@@ -211,6 +211,7 @@ DPmat_Ce <- extract.gt(vcf_Ce, element = "DP", as.numeric = TRUE)
 rm(vcf_Ca, vcf_Cc, vcf_Ce); gc(verbose = FALSE)
 
 ```
+
 ```{r, cache=FALSE}
 dim(DPmat_Ca)
 dim(DPmat_Cc)
@@ -421,7 +422,6 @@ mout_Cc <- multidog(refmat = AOmat_Cc,
 
 cat("Análise de Cc concluída. Salvando resultados...\n")
 save(mout_Cc, file="mout_Cc.rda")
-# Limpa a memória antes de começar o próximo.
 rm(mout_Cc, AOmat_Cc, DPmat_Cc); gc(verbose = FALSE)
 cat("Resultados de Cc salvos em 'mout_Cc.rda'.\n")
 
@@ -569,9 +569,9 @@ print(biased_snps)
 
 ```{r,cache=FALSE}
 col_pal = c(`0`="#E69F00", `1`="#56B4E9", `2`="#009E73", `3`="#CC46A7", `4`="#999999", `NA` = "grey50")
-dir.create("diagnostico_snps", showWarnings = FALSE)
-dir.create("diagnostico_snps/melhores_snps_Cc", showWarnings = FALSE)
-dir.create("diagnostico_snps/snps_com_vies_Cc", showWarnings = FALSE)
+#dir.create("diagnostico_snps", showWarnings = FALSE)
+#dir.create("diagnostico_snps/melhores_snps_Cc", showWarnings = FALSE)
+#dir.create("diagnostico_snps/snps_com_vies_Cc", showWarnings = FALSE)
 
 for (snp_id in best_snps) {
   
@@ -585,14 +585,14 @@ for (snp_id in best_snps) {
       theme(legend.position="top", plot.title = element_blank())
     
   # Combina os dois gráficos
-  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("VCF Bruto", "Updog"), common.legend = FALSE, legend = "bottom")
+  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("FreeBayes", "Updog"), common.legend = FALSE, legend = "bottom")
   
   # Salva o gráfico combinado em um arquivo
   ggsave(filename = paste0("diagnostico_snps/melhores_snps_Cc/", snp_id, ".png"),
     plot = combined_plot,
     width = 10, height = 5, dpi = 150
   )
-}
+  }
 
 for (snp_id in worst_snps) {
   
@@ -606,7 +606,7 @@ for (snp_id in worst_snps) {
       theme(legend.position="top", plot.title = element_blank())
     
   # Combina os dois gráficos
-  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("VCF Bruto", "Updog"), common.legend = FALSE, legend = "bottom")
+  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("FreeBayes", "Updog"), common.legend = FALSE, legend = "bottom")
   
   # Salva o gráfico combinado em um arquivo
   ggsave(filename = paste0("diagnostico_snps/piores_snps_Cc/", snp_id, ".png"),
@@ -627,7 +627,7 @@ for (snp_id in biased_snps) {
       theme(legend.position="top", plot.title = element_blank())
     
   # Combina os dois gráficos
-  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("VCF Bruto", "Updog"), common.legend = TRUE, legend = "bottom")
+  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("FreeBayes", "Updog"), common.legend = FALSE, legend = "bottom")
   
   # Salva o gráfico combinado em um arquivo
   ggsave(filename = paste0("diagnostico_snps/snps_com_vies_Cc/", snp_id, ".png"),
@@ -638,20 +638,8 @@ for (snp_id in biased_snps) {
 ```
 
 ```{r}
-# ...
-# Gráfico 1: Genotipagem bruta do VCF (usando sua função)
-p1 <- drawsp(vcf = vcf_Cc_raw, snp = snp_id, ploidy = 4, title = TRUE) + 
-      labs(x = "Reads Ref.", y = "Reads Alt.")
+library(tidyverse)
 
-# Gráfico 2: Genotipagem do updog
-# O [[1]] AQUI É ESSENCIAL para extrair o gráfico da lista.
-p2 <- plot(mout_Cc, indices = which(mout_Cc$snpdf$snp == snp_id))[[1]] +
-      scale_color_manual(values = col_pal, drop = FALSE, na.translate = FALSE) +
-      labs(color = "Dose (updog)", alpha = "Max. post. prob.") +
-      theme(legend.position="top", plot.title = element_blank(), axis.title = element_blank())
-
-# Combina os dois gráficos
-combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("VCF Bruto", "Updog"), 
-                                   common.legend = TRUE, legend = "bottom")
-
+load("mout_Cc.rda")
+load("snp_Cc.rda")
 ```
