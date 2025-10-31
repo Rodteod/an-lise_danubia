@@ -565,7 +565,7 @@ biased_snps <- snp_metrics_Cc %>%
 
 print(biased_snps)
 ```
-
+``
 
 ```{r,cache=FALSE}
 col_pal = c(`0`="#E69F00", `1`="#56B4E9", `2`="#009E73", `3`="#CC46A7", `4`="#999999", `NA` = "grey50")
@@ -638,8 +638,210 @@ for (snp_id in biased_snps) {
 ```
 
 ```{r}
-library(tidyverse)
+load("mout_Ce.rda")
+
+library(vcfR)
+
+vcf_Ce_raw <- read.vcfR("Ce_var_norm_filter_BIAL_QUAL_AF_NS_flex.vcf", verbose = FALSE)
+
+snp_metrics_Ce <- mout_Ce$snpdf
+
+summary(snp_metrics_Ce[, c( "bias", "od", "prop_mis")])
+
+best_snps_Ce <- snp_metrics_Ce %>% 
+  dplyr::filter(prop_mis < 0.02, bias > 0.9, bias < 1.1, od < 0.01) %>% # filtra os SNPs
+  dplyr::slice_sample(n=5) %>% # pega 5 exemplos aleatórios 
+  dplyr::pull(snp) #extrai apenas o nome dos SNPs
+
+print(best_snps_Ce)
+
+worst_snps_Ce <- snp_metrics_Ce %>%
+  dplyr::filter(prop_mis > 0.4) %>%
+  dplyr::slice_sample(n = 5) %>%
+  dplyr::pull(snp)
+
+print(worst_snps_Ce)
+
+
+biased_snps_Ce <- snp_metrics_Ce %>%
+  dplyr::filter(prop_mis < 0.1, bias > 1.5 | bias < 0.7) %>%
+  dplyr::slice_sample(n = 5) %>%
+  dplyr::pull(snp)
+
+print(biased_snps_Ce)
+```
+
+```{r}
+col_pal = c(`0`="#E69F00", `1`="#56B4E9", `2`="#009E73", `3`="#CC46A7", `4`="#999999", `NA` = "grey50")
+#dir.create("diagnostico_snps", showWarnings = FALSE)
+dir.create("diagnostico_snps/melhores_snps_Ce", showWarnings = FALSE)
+dir.create("diagnostico_snps/piores_snps_Ce", showWarnings = FALSE)
+dir.create("diagnostico_snps/snps_com_vies_Ce", showWarnings = FALSE)
+
+for (snp_id in best_snps_Ce) {
+  
+  # Gráfico 1: Genotipagem bruta do VCF (usando sua função)
+  p1 <- drawsp(vcf = vcf_Ce_raw, snp = snp_id, ploidy = 4, title = TRUE) + labs(x = "Reads Ref.", y = "Reads Alt.")
+  
+  # Gráfico 2: Genotipagem do updog
+ p2 <- updog:::plot.multidog(mout_Ce, indices = which(mout_Ce$snpdf$snp == snp_id))[[1]] +
+      scale_color_manual(values = col_pal, drop = FALSE, na.translate = FALSE) +
+      labs(color = "Dose (updog)", alpha = "Prob. Post.") +
+      theme(legend.position="top", plot.title = element_blank())
+    
+  # Combina os dois gráficos
+  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("FreeBayes", "Updog"), common.legend = FALSE, legend = "bottom")
+  
+  # Salva o gráfico combinado em um arquivo
+  ggsave(filename = paste0("diagnostico_snps/melhores_snps_Ce/", snp_id, ".png"),
+    plot = combined_plot,
+    width = 10, height = 5, dpi = 150
+  )
+  }
+
+for (snp_id in worst_snps_Ce) {
+  
+  # Gráfico 1: Genotipagem bruta do VCF (usando sua função)
+  p1 <- drawsp(vcf = vcf_Ce_raw, snp = snp_id, ploidy = 4, title = TRUE) + labs(x = "Reads Ref.", y = "Reads Alt.")
+  
+  # Gráfico 2: Genotipagem do updog
+ p2 <- updog:::plot.multidog(mout_Ce, indices = which(mout_Ce$snpdf$snp == snp_id))[[1]] +
+      scale_color_manual(values = col_pal, drop = FALSE, na.translate = FALSE) +
+      labs(color = "Dose (updog)", alpha = "Prob. Post.") +
+      theme(legend.position="top", plot.title = element_blank())
+    
+  # Combina os dois gráficos
+  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("FreeBayes", "Updog"), common.legend = FALSE, legend = "bottom")
+  
+  # Salva o gráfico combinado em um arquivo
+  ggsave(filename = paste0("diagnostico_snps/piores_snps_Ce/", snp_id, ".png"),
+    plot = combined_plot,
+    width = 10, height = 5, dpi = 150
+  )
+}
+
+for (snp_id in biased_snps_Ce) {
+  
+  # Gráfico 1: Genotipagem bruta do VCF (usando sua função)
+  p1 <- drawsp(vcf = vcf_Ce_raw, snp = snp_id, ploidy = 4, title = TRUE) + labs(x = "Reads Ref.", y = "Reads Alt.")
+  
+  # Gráfico 2: Genotipagem do updog
+ p2 <- updog:::plot.multidog(mout_Ce, indices = which(mout_Ce$snpdf$snp == snp_id))[[1]] +
+      scale_color_manual(values = col_pal, drop = FALSE, na.translate = FALSE) +
+      labs(color = "Dose (updog)", alpha = "Prob. Post.") +
+      theme(legend.position="top", plot.title = element_blank())
+    
+  # Combina os dois gráficos
+  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("FreeBayes", "Updog"), common.legend = FALSE, legend = "bottom")
+  
+  # Salva o gráfico combinado em um arquivo
+  ggsave(filename = paste0("diagnostico_snps/snps_com_vies_Ce/", snp_id, ".png"),
+    plot = combined_plot,
+    width = 10, height = 5, dpi = 150
+  )
+}
+```
+
+```{r}
+
+# aaaa maybe due to sequencing error, also accounted for using updog
+aaaa_erro <- c("chr1c_1937030", "chr1c_2728355", "chr1c_32737985", "chr1c_39646867", "chr1c_41816140", "chr1c_43315765")
+# aaaa with outlier
+aaaa_outlier <-c ("chr1c_35257907", "chr1c_42787710", "chr2c_19211303", "chr6c_16480280", "chr6c_49097512", "chr9c_27895758", "chr10c_45003537")
+# AAAA
+AAAA <- c("chr1c_35471537", "chr2c_12074295", "chr10c_8893803")
+# AAAA with outlier
+AAAA_outlier <- c("chr1c_36854704", "chr1c_36854711", "chr1c_36898126", "chr1c_36898234", "chr6c_6375311")
+# Aaaa with outlier
+Aaaa_outlier <- c("chr1c_11885138", "chr1c_13025242", "chr1c_36424922", "chr1c_36915786", "chr1c_39215113", "chr1c_43563586", "chr6c_19239262", "chr7c_644004")
+# AAAa with outlier
+AAAa_outlier <- c("chr1c_39215106", "chr1c_42378219", "chr1c_43339885", "chr1c_43551084", "chr1c_44035918", "chr1c_46361101", "chr1c_46387209", "chr1c_46699985", "chr6c_379503", "chr6c_416459", "chr6c_505874", "chr6c_1055987", "chr7c_33856", "chr7c_217030", "chr7c_556509")
+# AAAa with strong bias
+AAAa_strong_bias <- ("chr6c_22668973")
+# 5 class strong bias
+strong_bias5 <- c("chr1c_2617824", "chr1c_2617906", "chr1c_38266666", "chr1c_40338791", "chr1c_42787787", "chr1c_44938787")
+# AAaa with outlier
+AAaa_outlier <- c("chr2c_739600", "chr2c_2072206", "chr2c_6819987", "chr2c_66349790", "chr2c_67448604", "chr3c_911824", "chr4c_241263", "chr4c_732019", "chr4c_2295247", "chr4c_41014314", "chr5c_1969721", "chr5c_3778780", "chr5c_10744191", "chr5c_36975052", "chr5c_40676357", "chr5c_41575586", "chr6c_726367", "chr7c_217042", "chr7c_556416", "chr7c_1561232", "chr7c_1561274", "chr7c_3261969", "chr7c_5040433", "chr7c_5300901", "chr7c_7298062", "chr7c_7883290", "chr7c_8466466", "chr7c_12244742", "chr8c_32159518", "chr10c_116237", "chr10c_2693933", "chr10c_4169939", "chr10c_6067265", "chr10c_43264304", "chr11c_35360952")
+# Aa00 with outlier
+Aa00_outlier <- c("chr5c_1069263", "chr6c_565948", "chr6c_1483304", "chr6c_2176991", "chr6c_22282588", "chr6c_42831823", "chr6c_45309003", "chr6c_52098379", "chr7c_16463248", "chr7c_25491309", "chr9c_317654", "chr9c_1704466", "chr9c_3868628", "chr9c_25884837", "chr9c_27763272", "chr10c_10130285", "chr11c_1744478", "chr11c_2301165", "chr11c_3116828", "chr11c_25093312", "chr11c_28797521")
+```
+
+```{r}
+
+for (snp_id in AAaa_outlier) {
+  
+  # Gráfico 1: Genotipagem bruta do VCF (usando sua função)
+  p1 <- drawsp(vcf = vcf_Cc_raw, snp = snp_id, ploidy = 4, title = TRUE) + labs(x = "Reads Ref.", y = "Reads Alt.")
+  
+  # Gráfico 2: Genotipagem do updog
+ p2 <- updog:::plot.multidog(mout_Cc, indices = which(mout_Cc$snpdf$snp == snp_id))[[1]] +
+      scale_color_manual(values = col_pal, drop = FALSE, na.translate = FALSE) +
+      labs(color = "Dose (updog)", alpha = "Prob. Post.") +
+      theme(legend.position="top", plot.title = element_blank())
+    
+  # Combina os dois gráficos
+  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("FreeBayes", "Updog"), common.legend = FALSE, legend = "bottom")
+  
+  # Salva o gráfico combinado em um arquivo
+  ggsave(filename = paste0("diagnostico_snps/AAaa_outlier/", snp_id, ".png"),
+    plot = combined_plot,
+    width = 10, height = 5, dpi = 150
+  )
+}
+```
+
+```{r, cache=FALSE}
 
 load("mout_Cc.rda")
-load("snp_Cc.rda")
+
+table(mout_Cc$snpdf$ell1) # ell1: The estimated dosage of the parent.
+table(mout_Cc$snpdf$tau1 > 0) # tau1: The estimated double reduction parameter of the parent. Available if ell1 is 1, 2, or 3. Identified if ell1 is 1 or 3.
+hist(mout_Cc$snpdf$tau1, breaks = 300)
+table(mout_Cc$snpdf$gamma1 > 0) # gamma1: The estimated preferential pairing parameter. Available if ell1 is 2. However, it is not returned in an identified form.
+hist(mout_Cc$snpdf$gamma1, breaks = 300)
+
+```
+```{r}
+load("mout_Cc.rda")
+load("mout_Ce.rda")
+load("snp_Cc.rda"); dim(snp_Cc)
+load("snp_Ce.rda"); dim(snp_Ce)
+class_Cc <- apply(snp_Cc, 1, table)
+class_Ce <- apply(snp_Ce, 1, table)
+
+number_class_Cc <- unlist(lapply(class_Cc, length))
+number_class_Ce <- unlist(lapply(class_Ce, length))
+
+names(number_class_Cc) <- as.integer(extract_numeric(matrix(unlist(strsplit(names(number_class_Cc), split = "_")), ncol = 2, byrow = TRUE)[,1]))
+names(number_class_Ce) <- as.integer(extract_numeric(matrix(unlist(strsplit(names(number_class_Ce), split = "_")), ncol = 2, byrow = TRUE)[,1]))
+
+round(table(number_class_Cc, mout_Cc$snpdf$ell1)/sum(table(number_class_Cc))*100)
+round(table(names(number_class_Cc), number_class_Cc, mout_Cc$snpdf$ell1)/rowSums(table(names(number_class_Cc), number_class_Cc))*100)
+
+df_number_Cc <- data.frame(table(names(number_class_Cc), number_class_Cc), Reference = "Cc"); head(df_number_Cc)
+df_number_Ce <- data.frame(table(names(number_class_Ce), number_class_Ce), Reference = "Ce"); head(df_number_Ce)
+colnames(df_number_Cc) <- colnames(df_number_Ce) <- c("Chromosome", "N.class", "Frequency", "Reference")
+df_number <- rbind(df_number_Cc, df_number_Ce)
+df_number$Chromosome <- factor(df_number$Chromosome, levels = c(1:11), ordered = TRUE)
+df_number$N.class <- as.integer(df_number$N.class)
+head(df_number)
+
+ggplot(df_number, aes(x=Reference, y = Frequency, alpha= N.class, fill = Reference)) + 
+  facet_grid(~ Chromosome) +
+  geom_bar(position="fill", stat="identity") +
+  scale_y_continuous(labels = function(x) x*100, expand = c(0,0)) +
+  scale_fill_manual(values = c("#993300", "#f5ad05")) +
+  labs(y = "Frequency (%)", alpha = "Number of\nclasses") +
+  theme_classic() +
+  theme(strip.background = element_blank())
+ggsave("counts.png", width = 7, height = 4, dpi = 400)
+
+table(unlist(lapply(class_Cc[which(number_class_Cc == 1)], names)))
+table(unlist(lapply(class_Ce[which(number_class_Ce == 1)], names)))
+
+snp_Cc <- snp_Cc[-which(number_class_Cc == 1),]; dim(snp_Cc)
+snp_Ce <- snp_Ce[-which(number_class_Ce == 1),]; dim(snp_Ce)
+
+number_class_Cc <- number_class_Cc[-which(number_class_Cc == 1)]; length(number_class_Cc)
+number_class_Ce <- number_class_Ce[-which(number_class_Ce == 1)]; length(number_class_Ce)
 ```
