@@ -308,6 +308,7 @@ rm(ROmat_Ce, ROmat2_Ce, AOmat2_Ce, SQmat_Ce); gc(verbose = FALSE)
 rm(ROmat_Ca, ROmat2_Ca, AOmat2_Ca, SQmat_Ca); gc(verbose = FALSE)
 
 ```
+
 ```{r, cache=FALSE}
 
 
@@ -757,7 +758,7 @@ Aaaa_outlier <- c("chr1c_11885138", "chr1c_13025242", "chr1c_36424922", "chr1c_3
 # AAAa with outlier
 AAAa_outlier <- c("chr1c_39215106", "chr1c_42378219", "chr1c_43339885", "chr1c_43551084", "chr1c_44035918", "chr1c_46361101", "chr1c_46387209", "chr1c_46699985", "chr6c_379503", "chr6c_416459", "chr6c_505874", "chr6c_1055987", "chr7c_33856", "chr7c_217030", "chr7c_556509")
 # AAAa with strong bias
-AAAa_strong_bias <- ("chr6c_22668973")
+AAAa_strong_bias <- chr6c_22668973
 # 5 class strong bias
 strong_bias5 <- c("chr1c_2617824", "chr1c_2617906", "chr1c_38266666", "chr1c_40338791", "chr1c_42787787", "chr1c_44938787")
 # AAaa with outlier
@@ -844,4 +845,36 @@ snp_Ce <- snp_Ce[-which(number_class_Ce == 1),]; dim(snp_Ce)
 
 number_class_Cc <- number_class_Cc[-which(number_class_Cc == 1)]; length(number_class_Cc)
 number_class_Ce <- number_class_Ce[-which(number_class_Ce == 1)]; length(number_class_Ce)
+```
+
+Write some filtering functions:
+
+```{r}
+count.na <- function(x) {table(is.na(x))["TRUE"]}
+count.A <- function(x, ploidy = 4) {sum(table(x)*as.numeric(names(table(x)))) / (sum(table(x))*ploidy)}
+count.class <- function(x) {tail(sort(table(x)), 1) / sum(table(x))}
+marker.callrate <- function(snp, max.mis = 0.25) {
+  z <- apply(snp, 2, count.na)
+  z[is.na(z)] <- 0
+  z <- z / nrow(snp)
+  return(which(z >= max.mis))
+}
+ind.callrate <- function(snp, max.mis = 0.25) {
+  z <- apply(snp, 1, count.na)
+  z[is.na(z)] <- 0
+  z <- z / ncol(snp)
+  return(which(z >= max.mis))
+}
+allele.freq <- function(snp, min.maf = 0.25) {
+  z <- apply(snp, 2, count.A)
+  return(which(z > 1-min.maf | z < min.maf))
+}
+class.freq <- function(snp, max.class = 0.75) { # 
+  z <- apply(snp, 2, count.class)
+  return(which(z > max.class))
+}
+monomorphic <- function(snp) {
+  z <- apply(snp, 2, count.class)
+  return(which(z == 1))
+}
 ```
