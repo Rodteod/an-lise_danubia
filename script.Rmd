@@ -878,3 +878,24 @@ monomorphic <- function(snp) {
   return(which(z == 1))
 }
 ```
+
+```{r}
+load("snp_Cc.rda"); dim(snp_Cc)
+vcf_Cc <- read.vcfR("Cc_var_norm_filter_BIAL_QUAL_AF_NS_flex.vcf", verbose = TRUE)
+GTmat_Cc2 <- extract.gt(vcf_Cc, element = "GT", as.numeric = FALSE); GTmat_Cc2[1:10,1:5]; dim(GTmat_Cc2)
+dim(GTmat_Cc2)
+GTmat_Cc2 <- GTmat_Cc2[which(rownames(GTmat_Cc2) %in% rownames(snp_Cc)),which(colnames(GTmat_Cc2) %in% colnames(snp_Cc))]; dim(GTmat_Cc2)
+
+snp_Cc <- snp_Cc[which(rownames(snp_Cc) %in% rownames(GTmat_Cc2)),which(colnames(snp_Cc) %in% colnames(GTmat_Cc2))]; dim(snp_Cc)
+```
+
+
+```{r, cache=FALSE}
+map_Cc <- data.frame(SNPID = rownames(snp_Cc), matrix(unlist(strsplit(rownames(snp_Cc), split = "_")), ncol = 2, byrow = TRUE, dimnames = list(NULL, c("CHR", "POS")))); dim(map_Cc); head(map_Cc)
+map_Cc$CHR <- gsub("chr", "", map_Cc$CHR)
+map_Cc$CHR <- gsub("c", "", map_Cc$CHR)
+map_Cc$CHR <- factor(map_Cc$CHR, levels = unique(map_Cc$CHR))
+map_Cc$POS <- as.integer(map_Cc$POS)
+map_Cc2 <- map_Cc4 <- map_Ccud <- map_Ccst <- map_Cc
+head(map_Cc)
+```
