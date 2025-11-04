@@ -507,28 +507,81 @@ for(i in 1:length(indices)) {
 
 
 ```{r}
-drawsp <- function(vcf, snp, ploidy = 4, sec_axis = NULL, color = col_pal, title = "") {
-  pk <- (0:ploidy)/ploidy
+# --- Carregue as bibliotecas necessárias antes de usar a função ---
+# library(vcfR)
+# library(dplyr)   # ou library(tidyverse)
+# library(ggplot2)
+
+drawsp <- function(vcf, 
+                            snp, 
+                            ploidy = 4, 
+                            samples_to_remove = NULL, 
+                            title = NULL, 
+                            color_palette = c("0" = "#0072B2", "1" = "#009E73", "2" = "#D55E00", 
+                                              "3" = "#CC79A7", "4" = "#F0E442", "NA" = "grey50")) {
+  
+  # 1. Converte o VCF para um formato "tidy"
   vcf_long <- vcfR2tidy(vcf, single_frame = TRUE)
+  
+  # 2. Limpeza e preparação dos dados
   vcf_long$dat$gt_AO <- as.integer(vcf_long$dat$gt_AO)
+  vcf_long$dat$gt_RO <- as.integer(vcf_long$dat$gt_RO) # Adicionado para garantir que RO também é numérico
   vcf_long$dat$gt_GT_alleles[vcf_long$dat$gt_GT_alleles == "."] <- NA
   vcf_long$dat$ID <- paste(vcf_long$dat$CHROM, vcf_long$dat$POS, sep = "_")
+  
+  # 3. Filtra o SNP de interesse
   dfdat <- vcf_long$dat %>% filter(ID == snp)
-  dfdat <- dfdat[-c(227:235),]
-  dfdat$Dose <- factor(unlist(lapply(lapply(strsplit(dfdat$gt_GT, "/"), as.integer), sum)), ordered = TRUE)
-  maxcount <- max(max(dfdat$gt_RO, na.rm = TRUE), max(dfdat$gt_AO, na.rm = TRUE)) + 1
+  
+  # [MELHORIA] Verificação de erro se o SNP não for encontrado
+  if (nrow(dfdat) == 0) {
+    stop(paste0("ERRO: O SNP '", snp, "' não foi encontrado no arquivo VCF."))
+  }
+  
+  # 4. [MELHORIA] Remove amostras indesejadas pelo nome, de forma segura
+  if (!is.null(samples_to_remove)) {
+    # A coluna com nomes de amostra no vcfR2tidy é 'Indiv'
+    dfdat <- dfdat %>% filter(!Indiv %in% samples_to_remove)
+    
+    if (nrow(dfdat) == 0) {
+      stop(paste0("ERRO: Todas as amostras para o SNP '", snp, "' foram removidas."))
+    }
+  }
+  
+  # 5. Calcula a dose do alelo alternativo
+  dfdat$Dose <- factor(
+    unlist(lapply(lapply(strsplit(dfdat$gt_GT, "/"), as.integer), sum)), 
+    levels = 0:ploidy, # Garante que todos os níveis de dose existam
+    ordered = TRUE
+  )
+  
+  # 6. Calcula as linhas de referência para as proporções alélicas esperadas
+  pk <- (0:ploidy)/ploidy
+  maxcount <- max(c(dfdat$gt_RO, dfdat$gt_AO), na.rm = TRUE) + 1
   slopevec <- pk/(1 - pk)
   xend <- pmin(rep(maxcount, ploidy + 1), maxcount/slopevec)
   yend <- pmin(rep(maxcount, ploidy + 1), maxcount * slopevec)
-  df_lines <- data.frame(x = rep(0, ploidy + 1), y = rep(0, ploidy + 1), xend = xend, yend = yend)
-  p <- ggplot(dfdat) +
-    geom_point(aes(x = gt_RO, y = gt_AO, color = Dose), na.rm = TRUE) +
-    geom_segment(data = df_lines, mapping = aes(x = 0, y = 0, xend = xend, yend = yend), lty = 2, alpha = 1/2, color = "black", linewidth = 0.5) +
-    scale_color_manual(values = col_pal, drop = FALSE, na.translate = FALSE) +
-    labs(title = ifelse(isTRUE(title), snp, "")) + 
-    # labs(title = ifelse(isTRUE(title), snp, ""), x = ifelse(isTRUE(x_axis), "Counts a", ""), y = ifelse(isTRUE(y_axis), "Counts A", "")) + 
-    theme_bw() + 
-    theme(plot.title = element_text(size=10, hjust = c(.5,.5)), axis.title.x = element_blank(), axis.title.y = element_blank())#, axis.title = element_text(size=9))
+  df_lines <- data.frame(x = 0, y = 0, xend = xend, yend = yend, Dose = factor(0:ploidy))
+
+  # 7. Constrói o gráfico com ggplot2
+  plot_title <- if (is.null(title)) snp else title
+  
+  p <- ggplot(dfdat, aes(x = gt_RO, y = gt_AO)) +
+    geom_point(aes(color = Dose), na.rm = TRUE, size = 2, alpha = 0.8) +
+    geom_segment(data = df_lines, mapping = aes(x = x, y = y, xend = xend, yend = yend), 
+                 lty = 2, alpha = 0.7, color = "black", linewidth = 0.5) +
+    scale_color_manual(values = color_palette, 
+                       name = "Dose",
+                       drop = FALSE, # Garante que todas as cores da legenda apareçam
+                       na.translate = FALSE) +
+    labs(title = plot_title, 
+         x = "Contagem Alelo Referência (RO)", 
+         y = "Contagem Alelo Alternativo (AO)") +
+    theme_bw(base_size = 12) + 
+    theme(
+      plot.title = element_text(hjust = 0.5),
+      legend.position = "right"
+    )
+  
   return(p)
 }
 ```
@@ -758,7 +811,7 @@ Aaaa_outlier <- c("chr1c_11885138", "chr1c_13025242", "chr1c_36424922", "chr1c_3
 # AAAa with outlier
 AAAa_outlier <- c("chr1c_39215106", "chr1c_42378219", "chr1c_43339885", "chr1c_43551084", "chr1c_44035918", "chr1c_46361101", "chr1c_46387209", "chr1c_46699985", "chr6c_379503", "chr6c_416459", "chr6c_505874", "chr6c_1055987", "chr7c_33856", "chr7c_217030", "chr7c_556509")
 # AAAa with strong bias
-AAAa_strong_bias <- chr6c_22668973
+AAAa_strong_bias <- "chr6c_22668973"
 # 5 class strong bias
 strong_bias5 <- c("chr1c_2617824", "chr1c_2617906", "chr1c_38266666", "chr1c_40338791", "chr1c_42787787", "chr1c_44938787")
 # AAaa with outlier
@@ -769,7 +822,7 @@ Aa00_outlier <- c("chr5c_1069263", "chr6c_565948", "chr6c_1483304", "chr6c_21769
 
 ```{r}
 
-for (snp_id in AAaa_outlier) {
+for (snp_id in strong_bias5) {
   
   # Gráfico 1: Genotipagem bruta do VCF (usando sua função)
   p1 <- drawsp(vcf = vcf_Cc_raw, snp = snp_id, ploidy = 4, title = TRUE) + labs(x = "Reads Ref.", y = "Reads Alt.")
@@ -784,7 +837,7 @@ for (snp_id in AAaa_outlier) {
   combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("FreeBayes", "Updog"), common.legend = FALSE, legend = "bottom")
   
   # Salva o gráfico combinado em um arquivo
-  ggsave(filename = paste0("diagnostico_snps/AAaa_outlier/", snp_id, ".png"),
+  ggsave(filename = paste0("diagnostico_snps/strong_bias5/", snp_id, ".png"),
     plot = combined_plot,
     width = 10, height = 5, dpi = 150
   )
@@ -898,4 +951,62 @@ map_Cc$CHR <- factor(map_Cc$CHR, levels = unique(map_Cc$CHR))
 map_Cc$POS <- as.integer(map_Cc$POS)
 map_Cc2 <- map_Cc4 <- map_Ccud <- map_Ccst <- map_Cc
 head(map_Cc)
+```
+
+```{r}
+library(segtest)
+load("mout_Cc.rda")
+glist <- multidog_to_g(mout = mout_Cc, type = "off_gl", ploidy = 4) # gl = genotype + likelihood
+str(glist)
+rm(mout_Cc); gc()
+
+lrt_ces <- seg_multi(g = glist$g, p1 = glist$p1, p1_ploidy = 4, model = "seg", outlier = TRUE, ret_out = TRUE, db = "ces")
+lrt_prcs <- seg_multi(g = glist$g, p1 = glist$p1, p1_ploidy = 4, model = "seg", outlier = TRUE, ret_out = TRUE, db = "prcs")
+save(lrt_ces, lrt_prcs, file = "lrt.rda")
+```
+
+```{r}
+load("lrt.rda")
+lrt1 <- data.frame(SNPID = lrt_ces$snp, do.call(cbind, lrt_ces[1:8])); dim(lrt1); head(lrt1)
+```
+
+```{r}
+snp_Cc <- t(snp_Cc)
+map_Ccud$`4` <- map_Ccud$`3` <- map_Ccud$`2` <- map_Ccud$`1` <- map_Ccud$`0` <- 0
+map_Ccud$`1:8:18:8:1` <- map_Ccud$`1:4:6:4:1` <- map_Ccud$`1:2:1` <- NA
+head(map_Ccud)
+for(m in 1:ncol(snp_Cc)) {
+  count <- table(snp_Cc[,m])
+  map_Ccud[m,names(count)] <- count
+  class <- sort(names(tail(sort(unlist(map_Ccud[m,c("0","1","2","3","4")])), 3)))
+  map_Ccud[m,"1:2:1"] <- chisq.test(unlist(map_Ccud[m,class]), p = c(1,2,1)/4)$p.value
+  map_Ccud[m,"1:4:6:4:1"] <- chisq.test(unlist(map_Ccud[m,c("0","1","2","3","4")]), p = c(1,4,6,4,1)/16)$p.value
+  map_Ccud[m,"1:8:18:8:1"] <- chisq.test(unlist(map_Ccud[m,c("0","1","2","3","4")]), p = c(1,8,18,8,1)/36)$p.value
+}
+head(map_Ccud)
+```
+
+```{r, cache=FALSE, warning=FALSE}
+chisq_map <- function(map, cols) {
+  df_map <- map %>% pivot_longer(cols = cols); head(df_map)
+  A <- ggplot(df_map) +
+    geom_point(aes(x = POS/1e6, y = -log10(value), color = name), shape = 1, size = 0.5, alpha = 0.5) +
+    geom_abline(intercept = -log10(0.05/nrow(map)), slope = 0, linewidth = 0.2, linetype = "dashed") +
+    facet_grid(~ CHR, scales = "free_x", space = "free_x") + 
+    scale_y_continuous(expand = c(0,0)) +
+    scale_x_continuous(breaks = seq(0,80,20)) +
+    labs(y = expression(-"log"[10](italic("P"))), x = "Position (Mb)", color = "Segregation") +
+    theme_classic() + 
+    theme(legend.position = "bottom", strip.background = element_blank(), axis.title.x = element_blank(), axis.text.x = element_blank()); A
+  B <- ggplot(df_map) +
+    geom_point(aes(x = POS/1e6, y = -log10(value), color = name), shape = 1, size = 0.5, alpha = 0.5) +
+    geom_abline(intercept = -log10(0.05/nrow(map)), slope = 0, linewidth = 0.2, linetype = "dashed") +
+    facet_grid(~ CHR, scales = "free_x", space = "free_x") + 
+    scale_y_continuous(expand = c(0,0), limits = c(0,9.9)) +
+    scale_x_continuous(breaks = seq(0,80,20)) +
+    labs(y = expression(-"log"[10](italic("P"))), x = "Position (Mb)", color = "Segregation") +
+    theme_classic() + 
+    theme(legend.position = "bottom", strip.background = element_blank(), strip.text = element_blank(), axis.title.y = element_text(margin = margin(t = 0, r = 5.25, b = 0, l = 0))); B
+  ggarrange(A, B, ncol = 1, heights = c(5,2.5), common.legend = TRUE, legend = "bottom", labels = letters[1:2])
+}
 ```
