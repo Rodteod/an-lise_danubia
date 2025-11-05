@@ -160,7 +160,7 @@ counts_Ce <- table(matrix(unlist(strsplit(rownames(AOmat_Ce), split = "_")), nco
 #converte em dataframe
 counts_Ca <- data.frame(Reference=rep("Ca", length(counts_Ca)), counts_Ca)
 counts_Ce <- data.frame(Reference=rep("Ce", length(counts_Ce)), counts_Ce)
-counts_Ca <- data.frame(Reference=rep("Cc", length(counts_Cc)), counts_Cc)
+counts_Cc <- data.frame(Reference=rep("Cc", length(counts_Cc)), counts_Cc)
 
 # juntar os data frames
 
@@ -230,6 +230,7 @@ longmat_Cc <- tidyr::pivot_longer(as.data.frame(widemat_Cc), cols = -c(1:2), nam
 
 longmat <- rbind(longmat_Cc, longmat_Ce, longmat_Ca)
 ```
+
 ```{r, cache=FALSE}
 A <- ggplot(longmat) +
   geom_histogram(aes(x = DP, fill = Reference), position = "identity", bins = 200, alpha = 0.7) +
@@ -259,8 +260,8 @@ tapply(longmat$DP, longmat$Reference, median, na.rm = TRUE)
 
 # contagem de reads do alelo referencia 
 ROmat_Cc <- DPmat_Cc - AOmat_Cc
-ROmat_Ce <- DPmat_Ce - DPmat_Ce
-ROmat_Ca <- DPmat_Ca - DPmat_Ca
+ROmat_Ce <- DPmat_Ce - AOmat_Ce
+ROmat_Ca <- DPmat_Ca - AOmat_Ca
 
 
 #calculo de cobertura para cada genótipo
@@ -855,6 +856,25 @@ table(mout_Cc$snpdf$gamma1 > 0) # gamma1: The estimated preferential pairing par
 hist(mout_Cc$snpdf$gamma1, breaks = 300)
 
 ```
+
+Extract dosage calls:
+
+```{r, eval=FALSE}
+load("mout_Ca.rda")
+snp_Ca <- format_multidog(mout_Ca, varname = "geno"); dim(snp_Ca)
+save(snp_Ca, file = "snp_Ca.rda")
+rm(mout_Ca); gc(verbose = FALSE)
+load("mout_Cc.rda")
+snp_Cc <- format_multidog(mout_Cc, varname = "geno"); dim(snp_Cc)
+save(snp_Cc, file = "snp_Cc.rda")
+rm(mout_Cc); gc(verbose = FALSE)
+load("mout_Ce.rda")
+snp_Ce <- format_multidog(mout_Ce, varname = "geno"); dim(snp_Ce)
+save(snp_Ce, file = "snp_Ce.rda")
+rm(mout_Ce); gc(verbose = FALSE)
+```
+
+
 ```{r}
 load("mout_Cc.rda")
 load("mout_Ce.rda")
@@ -970,7 +990,7 @@ load("lrt.rda")
 lrt1 <- data.frame(SNPID = lrt_ces$snp, do.call(cbind, lrt_ces[1:8])); dim(lrt1); head(lrt1)
 ```
 
-```{r}
+```{r, cache=FALSE, warning=FALSE}
 snp_Cc <- t(snp_Cc)
 map_Ccud$`4` <- map_Ccud$`3` <- map_Ccud$`2` <- map_Ccud$`1` <- map_Ccud$`0` <- 0
 map_Ccud$`1:8:18:8:1` <- map_Ccud$`1:4:6:4:1` <- map_Ccud$`1:2:1` <- NA
@@ -985,6 +1005,23 @@ for(m in 1:ncol(snp_Cc)) {
 }
 head(map_Ccud)
 ```
+
+```{r, cache=FALSE}
+GTmat_Cc2 <- t(GTmat_Cc2)
+map_Cc2$`1/1` <- map_Cc2$`0/1` <- map_Cc2$`0/0` <- 0
+map_Cc2$`1:2:1` <- NA
+head(map_Cc2)
+for(m in 1:ncol(GTmat_Cc2)) {
+  count <- table(GTmat_Cc2[,m])
+  map_Cc2[m,names(count)] <- count
+  class <- sort(names(sort(unlist(map_Cc2[m,c("0/0","0/1","1/1")]))))
+  map_Cc2[m,"1:2:1"] <- chisq.test(unlist(map_Cc2[m,class]), p = c(1,2,1)/4)$p.value
+}
+head(map_Cc2)
+```
+
+
+Plotting $\chi^2$ tests across chromosomes:
 
 ```{r, cache=FALSE, warning=FALSE}
 chisq_map <- function(map, cols) {
@@ -1009,4 +1046,142 @@ chisq_map <- function(map, cols) {
     theme(legend.position = "bottom", strip.background = element_blank(), strip.text = element_blank(), axis.title.y = element_text(margin = margin(t = 0, r = 5.25, b = 0, l = 0))); B
   ggarrange(A, B, ncol = 1, heights = c(5,2.5), common.legend = TRUE, legend = "bottom", labels = letters[1:2])
 }
+```
+
+```{r, cache=FALSE, warning=FALSE}
+map_Ccst <- left_join(map_Ccst, lrt1, by = "SNPID"); head(map_Ccst); dim(map_Ccst)
+chisq_map(map = map_Ccst, cols = 6)
+chisq_map(map = map_Ccud, cols = 9:11)
+chisq_map(map = map_Cc2, cols = 7)
+#chisq_map(map = map_Cc4, cols = 9:11)
+```
+
+```{r}
+# --- FUNÇÃO MELHORADA E FLEXÍVEL ---
+
+# Carregue as bibliotecas necessárias primeiro
+library(dplyr)
+library(ggplot2)
+library(ggrepel)
+library(grafify)
+
+comparar_segregacao <- function(num_amostras,
+                                ref_prefix = "Cc",
+                                map_updog = NULL, 
+                                map_segtest = NULL, 
+                                map_fb_2x = NULL, 
+                                map_fb_4x = NULL) {
+  
+  # Lista para armazenar os dataframes processados
+  processed_maps <- list()
+  
+  monomorphic_threshold <- num_amostras * 0.95
+
+  # --- Processa cada dataframe APENAS se ele não for NULL ---
+
+  if (!is.null(map_updog)) {
+    processed_maps$updog <- map_updog %>%
+      filter(dose_0 < monomorphic_threshold, dose_2 < monomorphic_threshold, dose_4 < monomorphic_threshold) %>%
+      select(SNPID, CHR, POS, `1:2:1` = p_val_duplex_1_4_6_4_1) %>%
+      mutate(name = "updog")
+  }
+  
+  if (!is.null(map_segtest)) {
+    # Supondo que map_segtest já tem as colunas corretas (SNPID, CHR, POS, pval)
+    processed_maps$segtest <- map_segtest %>%
+      select(SNPID, CHR, POS, `1:2:1` = pval) %>%
+      mutate(name = "updog+segtest")
+  }
+  
+  if (!is.null(map_fb_2x)) {
+    processed_maps$fb_2x <- map_fb_2x %>%
+      filter(`0/0` < monomorphic_threshold, `0/1` < monomorphic_threshold, `1/1` < monomorphic_threshold) %>%
+      select(SNPID, CHR, POS, `1:2:1`) %>%
+      mutate(name = "FreeBayes 2x")
+  }
+  
+  if (!is.null(map_fb_4x)) {
+    processed_maps$fb_4x <- map_fb_4x %>%
+      filter(`0/0/0/0` < monomorphic_threshold, `0/0/1/1` < monomorphic_threshold, `1/1/1/1` < monomorphic_threshold) %>%
+      select(SNPID, CHR, POS, `1:2:1`) %>%
+      mutate(name = "FreeBayes 4x")
+  }
+
+  # --- Combina os dataframes que foram processados ---
+  if (length(processed_maps) == 0) {
+    stop("Nenhum dataframe de entrada foi fornecido.")
+  }
+  
+  map_all <- bind_rows(processed_maps) %>%
+    filter(!is.na(`1:2:1`)) %>%
+    group_by(name) %>%
+    arrange(desc(`1:2:1`)) %>%
+    mutate(y_pos = row_number())
+
+  # --- Cálculos para o gráfico (idêntico ao anterior) ---
+  bonferroni <- map_all %>% group_by(name) %>% summarise(counts = n(), .groups = 'drop')
+  
+  distorted <- map_all %>%
+    group_by(name) %>%
+    summarise(
+      total_snps = n(),
+      distorted_snps = sum(`1:2:1` < (0.05 / total_snps)),
+      dist_percent = (distorted_snps / total_snps) * 100,
+      .groups = 'drop'
+    )
+
+  # --- Gerar o Gráfico ---
+  plot <- ggplot() +
+    # ... (código do ggplot é o mesmo da resposta anterior)
+    geom_point(data = map_all, aes(x = -log10(`1:2:1`), y = y_pos, color = name), shape = 1, alpha = 0.7) +
+    geom_vline(data = bonferroni, aes(xintercept = -log10(0.05 / counts), color = name), 
+               linewidth = 0.5, linetype = "dashed") +
+    geom_text_repel(
+      data = distorted, 
+      aes(y = total_snps, x = 1, label = paste0(round(dist_percent, 1), "%")), 
+      color = "black", size = 3.5, max.overlaps = 100,
+      min.segment.length = 0, nudge_y = 500, show.legend = FALSE
+    ) +
+    scale_colour_grafify() +
+    labs(
+      title = paste("Comparação da Segregação de SNPs para a Referência", ref_prefix),
+      x = expression(-log[10](italic(P-valor))), y = "Número de SNPs Ordenados", color = "Método"
+    ) +
+    theme_classic() +
+    theme(legend.position = "bottom")
+  
+  ggsave(
+    filename = paste0("grafico_comparacao_chisq_", ref_prefix, ".png"), 
+    plot = plot, width = 7, height = 5, dpi = 400
+  )
+  
+  return(plot)
+}
+```
+
+```{r}
+# --- USO DA FUNÇÃO PARA O DATASET Cc (SEM DADOS 4x) ---
+
+# 1. Prepare os dataframes de entrada que você TEM:
+#    - map_Cc (resultado dos seus testes Qui-quadrado no updog)
+#    - lrt1 (resultado do segtest)
+#    - map_Cc2 (resultado dos testes no FreeBayes 2x)
+
+# Ajuste para o resultado do segtest (lrt1):
+map_Ccst_input <- lrt1 %>%
+  select(SNPID = snp, pval) %>%
+  left_join(map_Cc[, c("SNPID", "CHR", "POS")], by = "SNPID")
+
+# 2. Defina o número de amostras
+numero_de_amostras_cc <- 224 # SUBSTITUA PELO SEU NÚMERO REAL
+
+# 3. Chame a função, OMITINDO o argumento map_fb_4x
+comparar_segregacao(
+  num_amostras = numero_de_amostras_cc,
+  ref_prefix = "Cc",
+  map_updog = map_Cc, 
+  map_segtest = map_Ccst_input,
+  map_fb_2x = map_Cc2
+  # Note que não precisamos escrever map_fb_4x = NULL, pois já é o padrão
+)
 ```
