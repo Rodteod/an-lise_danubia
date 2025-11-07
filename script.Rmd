@@ -249,7 +249,7 @@ B <- ggplot(longmat) +
   theme_classic() +
   theme(legend.position = "none")
 
-# Combinando os dois gráficos em uma única figura
+# combinar os dois gráficos em uma única figura
 cowplot::plot_grid(B, A, ncol = 1, rel_heights = c(0.7, 2), align = 'v', axis = 'lr')
 ggsave("distribuicao_profundidade_leitura.png", width = 8, height = 6, dpi = 300)
 
@@ -318,12 +318,12 @@ count.na <- function(x) { sum(is.na(x)) }
 
 cat("\nFiltrando indivíduos com mais de 25% de dados faltantes...\n")
 # 'apply(DPmat_Cc, 2, ...)' aplica a função a cada coluna (2 = colunas).
-# Conta NAs para cada indivíduo.
+# Conta NAs por indivíduo.
 ind.nas_Cc <- apply(DPmat_Cc, 2, count.na)
 ind.nas_Ce <- apply(DPmat_Ce, 2, count.na)
 ind.nas_Ca <- apply(DPmat_Ca, 2, count.na)
 
-# Remover individuos se tiver mais de 25% de NAs.
+# Remover individuos > 25% de NAs.
 threshold_ind_Cc <- nrow(DPmat_Cc) * 0.25
 threshold_ind_Ce <- nrow(DPmat_Ce) * 0.25
 threshold_ind_Ca <- nrow(DPmat_Ca) * 0.25
@@ -335,7 +335,6 @@ cat("Indivíduos a remover de Cc:", length(ind_to_remove_Cc), "\n")
 cat("Indivíduos a remover de Ce:", length(ind_to_remove_Ce), "\n")
 cat("Indivíduos a remover de Ca:", length(ind_to_remove_Ca), "\n")
 
-# Se houver indivíduos para remover, removemos.
 if(length(ind_to_remove_Cc) > 0) {
   AOmat_Cc <- AOmat_Cc[, -ind_to_remove_Cc]
   DPmat_Cc <- DPmat_Cc[, -ind_to_remove_Cc]
@@ -351,8 +350,7 @@ if(length(ind_to_remove_Ce) > 0) {
 }
 
 cat("\nFiltrando marcadores com mais de 25% de dados faltantes...\n")
-# 'apply(DPmat_Cc, 1, ...)' aplica a função a cada linha (1 = linhas).
-# Conta NAs para cada marcador.
+# Conta NAs por marcador.
 mrk.nas_Cc <- apply(DPmat_Cc, 1, count.na)
 mrk.nas_Ce <- apply(DPmat_Ce, 1, count.na)
 mrk.nas_Ca <- apply(DPmat_Ca, 1, count.na)
@@ -508,7 +506,6 @@ for(i in 1:length(indices)) {
 
 
 ```{r}
-# --- Carregue as bibliotecas necessárias antes de usar a função ---
 # library(vcfR)
 # library(dplyr)   # ou library(tidyverse)
 # library(ggplot2)
@@ -521,24 +518,19 @@ drawsp <- function(vcf,
                             color_palette = c("0" = "#0072B2", "1" = "#009E73", "2" = "#D55E00", 
                                               "3" = "#CC79A7", "4" = "#F0E442", "NA" = "grey50")) {
   
-  # 1. Converte o VCF para um formato "tidy"
   vcf_long <- vcfR2tidy(vcf, single_frame = TRUE)
   
-  # 2. Limpeza e preparação dos dados
   vcf_long$dat$gt_AO <- as.integer(vcf_long$dat$gt_AO)
   vcf_long$dat$gt_RO <- as.integer(vcf_long$dat$gt_RO) # Adicionado para garantir que RO também é numérico
   vcf_long$dat$gt_GT_alleles[vcf_long$dat$gt_GT_alleles == "."] <- NA
   vcf_long$dat$ID <- paste(vcf_long$dat$CHROM, vcf_long$dat$POS, sep = "_")
   
-  # 3. Filtra o SNP de interesse
   dfdat <- vcf_long$dat %>% filter(ID == snp)
   
-  # [MELHORIA] Verificação de erro se o SNP não for encontrado
   if (nrow(dfdat) == 0) {
     stop(paste0("ERRO: O SNP '", snp, "' não foi encontrado no arquivo VCF."))
   }
   
-  # 4. [MELHORIA] Remove amostras indesejadas pelo nome, de forma segura
   if (!is.null(samples_to_remove)) {
     # A coluna com nomes de amostra no vcfR2tidy é 'Indiv'
     dfdat <- dfdat %>% filter(!Indiv %in% samples_to_remove)
@@ -548,7 +540,6 @@ drawsp <- function(vcf,
     }
   }
   
-  # 5. Calcula a dose do alelo alternativo
   dfdat$Dose <- factor(
     unlist(lapply(lapply(strsplit(dfdat$gt_GT, "/"), as.integer), sum)), 
     levels = 0:ploidy, # Garante que todos os níveis de dose existam
@@ -969,7 +960,7 @@ map_Cc$CHR <- gsub("chr", "", map_Cc$CHR)
 map_Cc$CHR <- gsub("c", "", map_Cc$CHR)
 map_Cc$CHR <- factor(map_Cc$CHR, levels = unique(map_Cc$CHR))
 map_Cc$POS <- as.integer(map_Cc$POS)
-map_Cc2 <- map_Cc4 <- map_Ccud <- map_Ccst <- map_Cc
+map_Cc2 <- map_Ccud <- map_Ccst <- map_Cc
 head(map_Cc)
 ```
 
@@ -979,7 +970,9 @@ load("mout_Cc.rda")
 glist <- multidog_to_g(mout = mout_Cc, type = "off_gl", ploidy = 4) # gl = genotype + likelihood
 str(glist)
 rm(mout_Cc); gc()
+```
 
+```{r}
 lrt_ces <- seg_multi(g = glist$g, p1 = glist$p1, p1_ploidy = 4, model = "seg", outlier = TRUE, ret_out = TRUE, db = "ces")
 lrt_prcs <- seg_multi(g = glist$g, p1 = glist$p1, p1_ploidy = 4, model = "seg", outlier = TRUE, ret_out = TRUE, db = "prcs")
 save(lrt_ces, lrt_prcs, file = "lrt.rda")
@@ -1055,133 +1048,141 @@ chisq_map(map = map_Ccud, cols = 9:11)
 chisq_map(map = map_Cc2, cols = 7)
 #chisq_map(map = map_Cc4, cols = 9:11)
 ```
+```{r}
+library(dplyr)
+
+# Comece com o dataframe do updog, que tem a maioria das informações
+# Selecione as colunas de identificação e os p-valores tetraploides
+map_Cc_all_tests <- map_Ccud %>%
+  select(
+    SNPID, CHR, POS,
+    p_val_diploide     = `1:2:1`,
+    p_val_tetra_sem_dr = `1:4:6:4:1`,
+    p_val_tetra_com_dr = `1:8:18:8:1`
+  )
+```
+
 
 ```{r}
-# --- FUNÇÃO MELHORADA E FLEXÍVEL ---
 
-# Carregue as bibliotecas necessárias primeiro
-library(dplyr)
-library(ggplot2)
-library(ggrepel)
+dim(map_Ccud)
+map_Ccud <- map_Ccud %>% 
+  filter(`0` < 211.85, `2` < 211.85, `4` < 211.85); dim(map_Ccud)
+map_Ccud <- map_Ccud[,c(1:3,9)]
+map_Ccud$name <- "updog"
+table(map_Ccud$`1:2:1` > (0.05/nrow(map_Ccud)))
+
+dim(map_Cc2)
+map_Cc2 <- map_Cc2 %>% 
+  filter(`0/0` < 211.85, `0/1` < 211.85, `1/1` < 211.85); dim(map_Cc2)
+map_Cc2 <- map_Cc2[,c(1:3,7)]
+map_Cc2$name <- "FreeBayes 2x"
+table(map_Cc2$`1:2:1` > (0.05/nrow(map_Cc2)))
+
+
+map_Ccst <- map_Ccst[,c(1:3,6)]
+map_Ccst$name <- "updog+segtest"
+colnames(map_Ccst)[4] <- "1:2:1"
+head(map_Ccst)
+
+table(map_Ccst$`1:2:1` > (0.05/nrow(map_Ccst)))
+
+
+map_Cc_all <- rbind(map_Cc2, map_Ccud, map_Ccst)
+head(map_Cc_all)
+
+
+map_Cc_all <- map_Cc_all %>% 
+  group_by(name) %>% 
+  arrange(desc(`1:2:1`)) %>% 
+  mutate(y = 1:n())
+
+
+bonferroni <- map_Cc_all %>% 
+  group_by(name) %>% 
+  summarise(counts = n())
+
+distorted <- map_Cc_all %>% 
+  group_by(name) %>% 
+  summarise(dist0 = sum(`1:2:1` < (0.05/n())), 
+            dist = sum(`1:2:1` < (0.05/n()))/n()*100, 
+            x = n(), y = min(`1:2:1`))
+
+
 library(grafify)
+library(ggplot2)
 
-comparar_segregacao <- function(num_amostras,
-                                ref_prefix = "Cc",
-                                map_updog = NULL, 
-                                map_segtest = NULL, 
-                                map_fb_2x = NULL, 
-                                map_fb_4x = NULL) {
-  
-  # Lista para armazenar os dataframes processados
-  processed_maps <- list()
-  
-  monomorphic_threshold <- num_amostras * 0.95
+ggplot() +
+  geom_point(data = map_Cc_all, aes(x = -log10(`1:2:1`), 
+                                    y = y, group = name, 
+                                    color = name), shape = 1) +
+  geom_vline(data = bonferroni, aes(xintercept = -log10(0.05/counts), 
+                                    group = name, 
+                                    color = name), 
+             linewidth = 0.2, 
+             linetype = "dashed") +
+  ggrepel::geom_text_repel(data = distorted, 
+                           aes(y = x, x = -log10(y), 
+                               label = paste0(round(dist, 1),"%"), 
+                               color = name), 
+                           size = 3.5, max.overlaps = 100, seed = 123, 
+                           min.segment.length = 0, nudge_y = 1, 
+                           show.legend = FALSE) +
+  scale_colour_grafify() +
+  labs(x = expression(-"log"[10](italic("P"))), 
+       y = "Number of SNPs", 
+       color = "Caller") +
+  theme_classic()
 
-  # --- Processa cada dataframe APENAS se ele não for NULL ---
-
-  if (!is.null(map_updog)) {
-    processed_maps$updog <- map_updog %>%
-      filter(dose_0 < monomorphic_threshold, dose_2 < monomorphic_threshold, dose_4 < monomorphic_threshold) %>%
-      select(SNPID, CHR, POS, `1:2:1` = p_val_duplex_1_4_6_4_1) %>%
-      mutate(name = "updog")
-  }
-  
-  if (!is.null(map_segtest)) {
-    # Supondo que map_segtest já tem as colunas corretas (SNPID, CHR, POS, pval)
-    processed_maps$segtest <- map_segtest %>%
-      select(SNPID, CHR, POS, `1:2:1` = pval) %>%
-      mutate(name = "updog+segtest")
-  }
-  
-  if (!is.null(map_fb_2x)) {
-    processed_maps$fb_2x <- map_fb_2x %>%
-      filter(`0/0` < monomorphic_threshold, `0/1` < monomorphic_threshold, `1/1` < monomorphic_threshold) %>%
-      select(SNPID, CHR, POS, `1:2:1`) %>%
-      mutate(name = "FreeBayes 2x")
-  }
-  
-  if (!is.null(map_fb_4x)) {
-    processed_maps$fb_4x <- map_fb_4x %>%
-      filter(`0/0/0/0` < monomorphic_threshold, `0/0/1/1` < monomorphic_threshold, `1/1/1/1` < monomorphic_threshold) %>%
-      select(SNPID, CHR, POS, `1:2:1`) %>%
-      mutate(name = "FreeBayes 4x")
-  }
-
-  # --- Combina os dataframes que foram processados ---
-  if (length(processed_maps) == 0) {
-    stop("Nenhum dataframe de entrada foi fornecido.")
-  }
-  
-  map_all <- bind_rows(processed_maps) %>%
-    filter(!is.na(`1:2:1`)) %>%
-    group_by(name) %>%
-    arrange(desc(`1:2:1`)) %>%
-    mutate(y_pos = row_number())
-
-  # --- Cálculos para o gráfico (idêntico ao anterior) ---
-  bonferroni <- map_all %>% group_by(name) %>% summarise(counts = n(), .groups = 'drop')
-  
-  distorted <- map_all %>%
-    group_by(name) %>%
-    summarise(
-      total_snps = n(),
-      distorted_snps = sum(`1:2:1` < (0.05 / total_snps)),
-      dist_percent = (distorted_snps / total_snps) * 100,
-      .groups = 'drop'
-    )
-
-  # --- Gerar o Gráfico ---
-  plot <- ggplot() +
-    # ... (código do ggplot é o mesmo da resposta anterior)
-    geom_point(data = map_all, aes(x = -log10(`1:2:1`), y = y_pos, color = name), shape = 1, alpha = 0.7) +
-    geom_vline(data = bonferroni, aes(xintercept = -log10(0.05 / counts), color = name), 
-               linewidth = 0.5, linetype = "dashed") +
-    geom_text_repel(
-      data = distorted, 
-      aes(y = total_snps, x = 1, label = paste0(round(dist_percent, 1), "%")), 
-      color = "black", size = 3.5, max.overlaps = 100,
-      min.segment.length = 0, nudge_y = 500, show.legend = FALSE
-    ) +
-    scale_colour_grafify() +
-    labs(
-      title = paste("Comparação da Segregação de SNPs para a Referência", ref_prefix),
-      x = expression(-log[10](italic(P-valor))), y = "Número de SNPs Ordenados", color = "Método"
-    ) +
-    theme_classic() +
-    theme(legend.position = "bottom")
-  
-  ggsave(
-    filename = paste0("grafico_comparacao_chisq_", ref_prefix, ".png"), 
-    plot = plot, width = 7, height = 5, dpi = 400
-  )
-  
-  return(plot)
-}
+ggsave("chisq_3_callers.png", width = 6, height = 4, dpi = 400)
 ```
 
 ```{r}
-# --- USO DA FUNÇÃO PARA O DATASET Cc (SEM DADOS 4x) ---
+# --- FASE 1: FILTRAGEM CORRETA E ROBUSTA ---
 
-# 1. Prepare os dataframes de entrada que você TEM:
-#    - map_Cc (resultado dos seus testes Qui-quadrado no updog)
-#    - lrt1 (resultado do segtest)
-#    - map_Cc2 (resultado dos testes no FreeBayes 2x)
+# Defina o limiar de Bonferroni uma única vez para clareza
+bonferroni_threshold <- 0.05 / nrow(map_Cc)
 
-# Ajuste para o resultado do segtest (lrt1):
-map_Ccst_input <- lrt1 %>%
-  select(SNPID = snp, pval) %>%
-  left_join(map_Cc[, c("SNPID", "CHR", "POS")], by = "SNPID")
+# Crie um dataframe 'df_seg' contendo TODOS os SNPs que passam
+# em PELO MENOS UM dos três testes.
+# O operador "|" significa "OU".
+df_seg <- map_Cc %>%
+  dplyr::filter(`1:2:1` > bonferroni_threshold | 
+                `1:4:6:4:1` > bonferroni_threshold | 
+                `1:8:18:8:1` > bonferroni_threshold)
 
-# 2. Defina o número de amostras
-numero_de_amostras_cc <- 224 # SUBSTITUA PELO SEU NÚMERO REAL
+cat("Número total de marcadores segregantes válidos:", nrow(df_seg), "\n")
 
-# 3. Chame a função, OMITINDO o argumento map_fb_4x
-comparar_segregacao(
-  num_amostras = numero_de_amostras_cc,
-  ref_prefix = "Cc",
-  map_updog = map_Cc, 
-  map_segtest = map_Ccst_input,
-  map_fb_2x = map_Cc2
-  # Note que não precisamos escrever map_fb_4x = NULL, pois já é o padrão
-)
+
+# --- FASE 2: CLASSIFICAÇÃO E PREPARAÇÃO PARA O GRÁFICO ---
+
+# Defina os nomes das colunas de segregação. Isso evita usar "números mágicos" como 9:11.
+seg_cols <- c("1:2:1", "1:4:6:4:1", "1:8:18:8:1")
+
+# Classifique cada SNP baseado no teste com o MAIOR p-value (melhor ajuste).
+df_seg <- df_seg %>%
+  dplyr::mutate(Segregation = seg_cols[apply(.[, seg_cols], 1, which.max)])
+
+
+# Crie a tabela de resumo de forma mais clara usando dplyr::count
+# Isso já nomeia as colunas corretamente (em vez de Var1, Var2).
+summary_df <- df_seg %>%
+  dplyr::count(CHR, Segregation, name = "Freq")
+
+
+# --- FASE 3: VISUALIZAÇÃO ---
+
+# O código do ggplot agora usa nomes de colunas claros (CHR, Freq, Segregation)
+ggplot(summary_df, aes(x = CHR, y = Freq, fill = Segregation)) + 
+  geom_bar(position="fill", stat="identity") +
+  scale_y_continuous(labels = scales::percent, expand = c(0,0)) + # scales::percent é um atalho útil
+  labs(y = "Frequency (%)", 
+       x = "Chromosome", 
+       fill = "Segregation Pattern") +
+  theme_classic() +
+  theme(strip.background = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1)) # Melhora a leitura dos eixos
+
+# Salva o gráfico
+ggsave("segr_corrected.png", width = 7, height = 4, dpi = 400)
 ```
