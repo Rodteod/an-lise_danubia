@@ -344,7 +344,7 @@ if(length(ind_to_remove_Ce) > 0) {
   DPmat_Ce <- DPmat_Ce[, -ind_to_remove_Ce]
 }
 
-if(length(ind_to_remove_Ce) > 0) {
+if(length(ind_to_remove_Ca) > 0) {
   AOmat_Ca <- AOmat_Ca[, -ind_to_remove_Ca]
   DPmat_Ca <- DPmat_Ca[, -ind_to_remove_Ca]
 }
@@ -466,7 +466,7 @@ mout_Ca <- multidog(refmat = AOmat_Ca,
 cat("Análise de Ca concluída. Salvando resultados...\n")
 save(mout_Ca, file="mout_Ca.rda")
 rm(mout_Ca, AOmat_Ca, DPmat_Ca); gc(verbose = FALSE)
-cat("Resultados de Ce salvos em 'mout_Ce.rda'.\n")
+cat("Resultados de Ce salvos em 'mout_Ca.rda'.\n")
 ```
 
 ```{r, eval=FALSE}
@@ -1051,8 +1051,7 @@ chisq_map(map = map_Cc2, cols = 7)
 ```{r}
 library(dplyr)
 
-# Comece com o dataframe do updog, que tem a maioria das informações
-# Selecione as colunas de identificação e os p-valores tetraploides
+
 map_Cc_all_tests <- map_Ccud %>%
   select(
     SNPID, CHR, POS,
@@ -1138,51 +1137,299 @@ ggsave("chisq_3_callers.png", width = 6, height = 4, dpi = 400)
 ```
 
 ```{r}
-# --- FASE 1: FILTRAGEM CORRETA E ROBUSTA ---
+map_Cc2_pval <- map_Cc2 %>%
+  select(SNPID, p_val_disomic = `1:2:1`)
 
-# Defina o limiar de Bonferroni uma única vez para clareza
-bonferroni_threshold <- 0.05 / nrow(map_Cc)
+# Use left_join para adicionar a coluna de p-valor dissômico ao dataframe mestre
+map_Cc_all_tests <- left_join(map_Cc_all_tests, map_Cc2_pval, by = "SNPID")
 
-# Crie um dataframe 'df_seg' contendo TODOS os SNPs que passam
-# em PELO MENOS UM dos três testes.
-# O operador "|" significa "OU".
-df_seg <- map_Cc %>%
-  dplyr::filter(`1:2:1` > bonferroni_threshold | 
-                `1:4:6:4:1` > bonferroni_threshold | 
-                `1:8:18:8:1` > bonferroni_threshold)
-
-cat("Número total de marcadores segregantes válidos:", nrow(df_seg), "\n")
+# Verifique o resultado
+cat("Dataframe mestre criado com sucesso. Dimensões:", dim(map_Cc_all_tests), "\n")
+head(map_Cc_all_tests)
 
 
-# --- FASE 2: CLASSIFICAÇÃO E PREPARAÇÃO PARA O GRÁFICO ---
+# --- ETAPA 3: ANÁLISE E PLOTAGEM (SEU ÚLTIMO BLOCO, AGORA CORRIGIDO) ---
 
-# Defina os nomes das colunas de segregação. Isso evita usar "números mágicos" como 9:11.
-seg_cols <- c("1:2:1", "1:4:6:4:1", "1:8:18:8:1")
+cat("Iniciando a análise dos modelos de segregação...\n")
 
-# Classifique cada SNP baseado no teste com o MAIOR p-value (melhor ajuste).
-df_seg <- df_seg %>%
-  dplyr::mutate(Segregation = seg_cols[apply(.[, seg_cols], 1, which.max)])
+# 1. Defina o limiar de significância de Bonferroni
+bonferroni_threshold <- 0.05 / nrow(map_Cc_all_tests)
+
+# 2. Identifique os SNPs que se ajustam a cada modelo
+#    Filtramos NAs para evitar erros nos índices
+idx_seg_disomic <- which(map_Cc_all_tests$p_val_disomic > bonferroni_threshold)
+idx_seg_tet_sem_dr <- which(map_Cc_all_tests$p_val_tetra_sem_dr > bonferroni_threshold)
+idx_seg_tet_com_dr <- which(map_Cc_all_tests$p_val_tetra_com_dr > bonferroni_threshold)
+
+cat("SNPs ajustados ao modelo Dissômico (1:2:1):", length(idx_seg_disomic), "\n")
+cat("SNPs ajustados ao modelo Tetra (sem DR):", length(idx_seg_tet_sem_dr), "\n")
+cat("SNPs ajustados ao modelo Tetra (com DR):", length(idx_seg_tet_com_dr), "\n")
+
+# 3. Crie um conjunto com TODOS os SNPs que passaram em PELO MENOS UM dos testes
+idx_good_snps <- unique(c(idx_seg_disomic, idx_seg_tet_sem_dr, idx_seg_tet_com_dr))
+cat("Total de SNPs com segregação esperada:", length(idx_good_snps), "\n")
+
+# Crie o dataframe de segregação usando apenas esses SNPs de alta qualidade
+df_seg <- map_Cc_all_tests[idx_good_snps, ]
+
+# 4. Determine o "melhor" modelo para cada SNP
+#    Agora os nomes das colunas são os que definimos acima
+p_val_columns <- c("p_val_disomic", "p_val_tetra_sem_dr", "p_val_tetra_com_dr")
+
+# O apply() pode retornar NAs se todas as colunas de p-valor forem NA para uma linha.
+# Adicionamos na.rm = TRUE para lidar com isso
+best_model_idx <- apply(df_seg[, p_val_columns], 1, function(row) {
+  if (all(is.na(row))) NA else which.max(row)
+})
 
 
-# Crie a tabela de resumo de forma mais clara usando dplyr::count
-# Isso já nomeia as colunas corretamente (em vez de Var1, Var2).
-summary_df <- df_seg %>%
-  dplyr::count(CHR, Segregation, name = "Freq")
+# Atribua o nome do melhor modelo
+df_seg$SegregationModel <- p_val_columns[best_model_idx]
 
+# Deixe os nomes mais amigáveis para a legenda
+df_seg$SegregationModel <- case_when(
+  df_seg$SegregationModel == "p_val_disomic" ~ "Dissômico (1:2:1)",
+  df_seg$SegregationModel == "p_val_tetra_sem_dr" ~ "Tetrassômico (sem DR)",
+  df_seg$SegregationModel == "p_val_tetra_com_dr" ~ "Tetrassômico (com DR)",
+  TRUE ~ NA_character_
+)
 
-# --- FASE 3: VISUALIZAÇÃO ---
+# 5. Prepare os dados para o gráfico
+df_plot <- df_seg %>%
+  filter(!is.na(SegregationModel)) %>% # Remove SNPs onde nenhum modelo pôde ser determinado
+  count(CHR, SegregationModel) %>%
+  rename(Chromosome = CHR, Frequency = n)
 
-# O código do ggplot agora usa nomes de colunas claros (CHR, Freq, Segregation)
-ggplot(summary_df, aes(x = CHR, y = Freq, fill = Segregation)) + 
-  geom_bar(position="fill", stat="identity") +
-  scale_y_continuous(labels = scales::percent, expand = c(0,0)) + # scales::percent é um atalho útil
-  labs(y = "Frequency (%)", 
-       x = "Chromosome", 
-       fill = "Segregation Pattern") +
+# 6. Gere o Gráfico
+library(ggplot2)
+library(scales)
+
+ggplot(df_plot, aes(x = Chromosome, y = Frequency, fill = SegregationModel)) +
+  geom_bar(position = "fill", stat = "identity") +
+  scale_y_continuous(labels = percent, expand = c(0, 0)) +
+  scale_fill_manual(values = c("Dissômico (1:2:1)" = "#56B4E9", 
+                               "Tetrassômico (sem DR)" = "#009E73",
+                               "Tetrassômico (com DR)" = "#E69F00")) +
+  labs(
+    title = "Proporção de Modelos de Segregação por Cromossomo (Subgenoma Cc)",
+    subtitle = "Apenas para SNPs com segregação esperada",
+    x = "Cromossomo",
+    y = "Proporção de SNPs (%)",
+    fill = "Modelo de Segregação Predominante"
+  ) +
   theme_classic() +
-  theme(strip.background = element_blank(),
-        axis.text.x = element_text(angle = 45, hjust = 1)) # Melhora a leitura dos eixos
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom"
+  )
 
-# Salva o gráfico
-ggsave("segr_corrected.png", width = 7, height = 4, dpi = 400)
+# Salve o gráfico
+ggsave(
+  filename = paste0("grafico_segregacao_3modelos_", "Cc", ".png"), 
+  width = 9, height = 6, dpi = 400
+)
 ```
+
+```{r}
+f2 <- which(map_Ccud$`1:2:1` > 0.05/nrow(map_Ccud)); length(f2)
+f2allo <- which(map_Ccud$`1:4:6:4:1` > 0.05/nrow(map_Ccud)); length(f2allo)
+f2auto <- which(map_Ccud$`1:8:18:8:1` > 0.05/nrow(map_Ccud)); length(f2auto)
+length(unique(c(f2, f2allo, f2auto)))
+
+df_seg <- map_Ccud[f2,]
+df_seg$Segregation <- apply(df_seg[,9:11], 1, which.max)
+df_seg$Segregation <- factor(df_seg$Segregation, labels = colnames(df_seg)[9:11])
+df_seg <- data.frame(table(df_seg$CHR, df_seg$Segregation))
+ggplot(df_seg, aes(x=Var1, y = Freq, fill = Var2)) +
+  geom_bar(position="fill", stat="identity") +
+  scale_y_continuous(labels = function(x) x*100, expand = c(0,0)) +
+  labs(y = "Frequency (%)", alpha = "Number of\nclasses") +
+  theme_classic() +
+  theme(strip.background = element_blank())
+ggsave("segr.png", width = 7, height = 4, dpi = 400)
+```
+Perform manual filtering: 
+
+```{r, cache=FALSE, eval=FALSE}
+load("snp_Ca.rda")
+load("snp_Cc.rda")
+load("snp_Ce.rda")
+
+
+cat("--- Filtragem da Matriz de Dosagens ---\n")
+
+cat("\nProcessando a matriz 'Ca'...\n")
+
+snp_Ca <- t(snp_Ca)
+cat("Dimensões ANTES da filtragem (Amostras x Marcadores):", dim(snp_Ca), "\n")
+
+
+exclude_mrk_Ca <- marker.callrate(snp_Ca)
+cat(length(exclude_mrk_Ca), "marcadores em 'Ca' serão removidos (>25% de dados faltantes).\n")
+if (length(exclude_mrk_Ca) > 0) {
+  snp_Ca <- snp_Ca[, -exclude_mrk_Ca]
+}
+cat("Dimensões DEPOIS da filtragem (Amostras x Marcadores):", dim(snp_Ca), "\n")
+
+
+cat("\nProcessando a matriz 'Cc'...\n")
+snp_Cc <- t(snp_Cc)
+cat("Dimensões ANTES da filtragem (Amostras x Marcadores):", dim(snp_Cc), "\n")
+exclude_mrk_Cc <- marker.callrate(snp_Cc)
+cat(length(exclude_mrk_Cc), "marcadores em 'Cc' serão removidos (>25% de dados faltantes).\n")
+if (length(exclude_mrk_Cc) > 0) {
+  snp_Cc <- snp_Cc[, -exclude_mrk_Cc]
+}
+cat("Dimensões DEPOIS da filtragem (Amostras x Marcadores):", dim(snp_Cc), "\n")
+
+
+cat("\nProcessando a matriz 'Ce'...\n")
+snp_Ce <- t(snp_Ce)
+cat("Dimensões ANTES da filtragem (Amostras x Marcadores):", dim(snp_Ce), "\n")
+exclude_mrk_Ce <- marker.callrate(snp_Ce)
+cat(length(exclude_mrk_Ce), "marcadores em 'Ce' serão removidos (>25% de dados faltantes).\n")
+if (length(exclude_mrk_Ce) > 0) {
+  snp_Ce <- snp_Ce[, -exclude_mrk_Ce]
+}
+cat("Dimensões DEPOIS da filtragem (Amostras x Marcadores):", dim(snp_Ce), "\n")
+
+save(snp_Ca, file = "snp_Ca_filtered.rda")
+save(snp_Cc, file = "snp_Cc_filtered.rda")
+save(snp_Ce, file = "snp_Ce_filtered.rda")
+```
+
+```{r plot_kept_snps, cache=FALSE}
+# Carregue os objetos necessários, se ainda não estiverem no ambiente.
+load("snp_Cc_filtered.rda") # Use a matriz já filtrada da etapa anterior
+load("mout_Cc.rda")
+load("snp_Ce_filtered.rda") # Use a matriz já filtrada da etapa anterior
+load("mout_Ce.rda")
+
+cat("--- Gerando gráficos de diagnóstico para os SNPs mantidos ---\n")
+
+# --- Processamento para o alinhamento Canephora (Cc) ---
+cat("\nProcessando SNPs de 'Cc'...\n")
+
+# Passo 1: Identificar os índices dos SNPs mantidos dentro do objeto 'mout_Cc'
+# Note que `snp_Cc` deve ter SNPs nas colunas, como na etapa anterior.
+# Se você não transpôs `snp_Cc` e a salvou, use `rownames()` em vez de `colnames()`.
+# Assumindo que você está usando a matriz transposta (Amostras x SNPs):
+snps_mantidos_Cc <- colnames(snp_Cc)
+indices_Cc <- which(mout_Cc$snpdf$snp %in% snps_mantidos_Cc)
+cat("Encontrados", length(indices_Cc), "SNPs para plotar em 'Cc'.\n")
+
+# Passo 2: Dividir os índices em blocos de 100 para criar múltiplos arquivos PDF.
+# A função split cria uma lista, onde cada elemento da lista é um vetor com até 100 índices.
+indices_list_Cc <- split(indices_Cc, ceiling(seq_along(indices_Cc) / 100))
+cat("Os SNPs de 'Cc' serão salvos em", length(indices_list_Cc), "arquivos PDF.\n")
+
+# Passo 3: Criar um diretório para os plots dos SNPs mantidos.
+dir.create(path = "plots_kept_snps_Cc", showWarnings = FALSE)
+
+# Passo 4: Loop para gerar um PDF para cada bloco de 100 SNPs.
+for (i in seq_along(indices_list_Cc)) {
+  # Define o nome do arquivo PDF dinamicamente.
+  pdf_file_name <- paste0("plots_kept_snps_Cc/mout_kept_Cc_chunk_", i, ".pdf")
+  pdf(pdf_file_name, width = 8, height = 6)
+  
+  # Plota o subconjunto de SNPs correspondente a este chunk.
+  # A função plot() do updog organiza os gráficos automaticamente.
+  print(plot(mout_Cc, indices = indices_list_Cc[[i]]))
+  
+  # Fecha o arquivo PDF atual antes de ir para o próximo.
+  dev.off()
+}
+cat("Gráficos para 'Cc' gerados com sucesso!\n")
+
+
+# --- Repetir o mesmo processo para o alinhamento Eugenioides (Ce) ---
+cat("\nProcessando SNPs de 'Ce'...\n")
+snps_mantidos_Ce <- colnames(snp_Ce)
+indices_Ce <- which(mout_Ce$snpdf$snp %in% snps_mantidos_Ce)
+cat("Encontrados", length(indices_Ce), "SNPs para plotar em 'Ce'.\n")
+
+indices_list_Ce <- split(indices_Ce, ceiling(seq_along(indices_Ce) / 100))
+cat("Os SNPs de 'Ce' serão salvos em", length(indices_list_Ce), "arquivos PDF.\n")
+
+dir.create(path = "plots_kept_snps_Ce", showWarnings = FALSE)
+
+for (i in seq_along(indices_list_Ce)) {
+  pdf_file_name <- paste0("plots_kept_snps_Ce/mout_kept_Ce_chunk_", i, ".pdf")
+  pdf(pdf_file_name, width = 8, height = 6)
+  print(plot(mout_Ce, indices = indices_list_Ce[[i]]))
+  dev.off()
+}
+cat("Gráficos para 'Ce' gerados com sucesso!\n")
+
+```
+
+```{r create_map_files, cache=FALSE}
+# Carregue as matrizes de dosagens filtradas (Amostras x SNPs)
+# Usando os arquivos salvos na etapa anterior
+load("snp_Cc_filtered.rda")
+load("snp_Ce_filtered.rda")
+
+# Verifique se o pacote 'tidyr' está instalado
+if (!require("tidyr")) install.packages("tidyr")
+library(tidyr)
+library(dplyr) # tidyr funciona melhor com dplyr
+
+cat("--- Criando arquivos de mapa físico ---\n")
+
+# --- Processamento para o alinhamento Canephora (Cc) ---
+cat("\nProcessando 'Cc'...\n")
+
+# O ponto de partida é um data frame apenas com os nomes dos SNPs
+map_Cc <- data.frame(SNPID = colnames(snp_Cc))
+
+# Usamos a função separate() do tidyr para dividir a coluna SNPID.
+# É muito mais legível que a combinação strsplit/unlist/matrix.
+map_Cc <- map_Cc %>%
+  separate(
+    col = SNPID,
+    into = c("CHR", "POS"),
+    sep = "_", # O caractere que separa as colunas
+    remove = FALSE, # Mantém a coluna original SNPID
+    convert = TRUE # Tenta converter automaticamente CHR para texto e POS para número
+  )
+
+# Limpeza do nome do cromossomo
+map_Cc$CHR <- gsub("chr|c", "", map_Cc$CHR)
+
+# CORREÇÃO CRÍTICA: Ordenar os cromossomos numericamente
+# Primeiro, pegamos os nomes únicos dos cromossomos
+# Depois, convertemos para número e ordenamos, e então de volta para caractere.
+ordered_levels_Cc <- unique(map_Cc$CHR) %>% as.numeric() %>% sort() %>% as.character()
+
+# Aplicamos essa ordem correta ao criar o fator
+map_Cc$CHR <- factor(map_Cc$CHR, levels = ordered_levels_Cc)
+
+# Verificação final
+cat("Dimensões do mapa 'Cc':", dim(map_Cc), "\n")
+head(map_Cc)
+cat("Ordem dos cromossomos em 'Cc':", levels(map_Cc$CHR), "\n")
+
+
+# --- Repetir o processo para o alinhamento Eugenioides (Ce) ---
+cat("\nProcessando 'Ce'...\n")
+map_Ce <- data.frame(SNPID = colnames(snp_Ce)) %>%
+  separate(SNPID, into = c("CHR", "POS"), sep = "_", remove = FALSE, convert = TRUE)
+
+map_Ce$CHR <- gsub("chr|e", "", map_Ce$CHR)
+
+ordered_levels_Ce <- unique(map_Ce$CHR) %>% as.numeric() %>% sort() %>% as.character()
+map_Ce$CHR <- factor(map_Ce$CHR, levels = ordered_levels_Ce)
+
+cat("Dimensões do mapa 'Ce':", dim(map_Ce), "\n")
+head(map_Ce)
+cat("Ordem dos cromossomos em 'Ce':", levels(map_Ce$CHR), "\n")
+
+
+# --- Salvar os Resultados ---
+# Salva a matriz de genótipos JUNTO com seu mapa correspondente.
+save(snp_Cc, map_Cc, file = "snp_filtered_Cc.rda")
+save(snp_Ce, map_Ce, file = "snp_filtered_Ce.rda")
+
+cat("\nMatrizes de dosagens e mapas físicos foram salvos com sucesso!\n")
+```
+
