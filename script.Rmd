@@ -1299,10 +1299,9 @@ save(snp_Ce, file = "snp_Ce_filtered.rda")
 ```
 
 ```{r plot_kept_snps, cache=FALSE}
-# Carregue os objetos necessários, se ainda não estiverem no ambiente.
-load("snp_Cc_filtered.rda") # Use a matriz já filtrada da etapa anterior
+load("snp_Cc_filtered.rda") 
 load("mout_Cc.rda")
-load("snp_Ce_filtered.rda") # Use a matriz já filtrada da etapa anterior
+load("snp_Ce_filtered.rda") 
 load("mout_Ce.rda")
 
 cat("--- Gerando gráficos de diagnóstico para os SNPs mantidos ---\n")
@@ -1310,39 +1309,29 @@ cat("--- Gerando gráficos de diagnóstico para os SNPs mantidos ---\n")
 # --- Processamento para o alinhamento Canephora (Cc) ---
 cat("\nProcessando SNPs de 'Cc'...\n")
 
-# Passo 1: Identificar os índices dos SNPs mantidos dentro do objeto 'mout_Cc'
-# Note que `snp_Cc` deve ter SNPs nas colunas, como na etapa anterior.
-# Se você não transpôs `snp_Cc` e a salvou, use `rownames()` em vez de `colnames()`.
-# Assumindo que você está usando a matriz transposta (Amostras x SNPs):
+
 snps_mantidos_Cc <- colnames(snp_Cc)
 indices_Cc <- which(mout_Cc$snpdf$snp %in% snps_mantidos_Cc)
 cat("Encontrados", length(indices_Cc), "SNPs para plotar em 'Cc'.\n")
 
-# Passo 2: Dividir os índices em blocos de 100 para criar múltiplos arquivos PDF.
-# A função split cria uma lista, onde cada elemento da lista é um vetor com até 100 índices.
+
 indices_list_Cc <- split(indices_Cc, ceiling(seq_along(indices_Cc) / 100))
 cat("Os SNPs de 'Cc' serão salvos em", length(indices_list_Cc), "arquivos PDF.\n")
 
-# Passo 3: Criar um diretório para os plots dos SNPs mantidos.
 dir.create(path = "plots_kept_snps_Cc", showWarnings = FALSE)
 
-# Passo 4: Loop para gerar um PDF para cada bloco de 100 SNPs.
 for (i in seq_along(indices_list_Cc)) {
-  # Define o nome do arquivo PDF dinamicamente.
   pdf_file_name <- paste0("plots_kept_snps_Cc/mout_kept_Cc_chunk_", i, ".pdf")
   pdf(pdf_file_name, width = 8, height = 6)
   
-  # Plota o subconjunto de SNPs correspondente a este chunk.
-  # A função plot() do updog organiza os gráficos automaticamente.
+ 
   print(plot(mout_Cc, indices = indices_list_Cc[[i]]))
   
-  # Fecha o arquivo PDF atual antes de ir para o próximo.
   dev.off()
 }
 cat("Gráficos para 'Cc' gerados com sucesso!\n")
 
 
-# --- Repetir o mesmo processo para o alinhamento Eugenioides (Ce) ---
 cat("\nProcessando SNPs de 'Ce'...\n")
 snps_mantidos_Ce <- colnames(snp_Ce)
 indices_Ce <- which(mout_Ce$snpdf$snp %in% snps_mantidos_Ce)
@@ -1364,53 +1353,43 @@ cat("Gráficos para 'Ce' gerados com sucesso!\n")
 ```
 
 ```{r create_map_files, cache=FALSE}
-# Carregue as matrizes de dosagens filtradas (Amostras x SNPs)
-# Usando os arquivos salvos na etapa anterior
+
 load("snp_Cc_filtered.rda")
 load("snp_Ce_filtered.rda")
 
 # Verifique se o pacote 'tidyr' está instalado
 if (!require("tidyr")) install.packages("tidyr")
 library(tidyr)
-library(dplyr) # tidyr funciona melhor com dplyr
+library(dplyr) 
 
 cat("--- Criando arquivos de mapa físico ---\n")
 
-# --- Processamento para o alinhamento Canephora (Cc) ---
 cat("\nProcessando 'Cc'...\n")
 
-# O ponto de partida é um data frame apenas com os nomes dos SNPs
 map_Cc <- data.frame(SNPID = colnames(snp_Cc))
 
-# Usamos a função separate() do tidyr para dividir a coluna SNPID.
-# É muito mais legível que a combinação strsplit/unlist/matrix.
+
 map_Cc <- map_Cc %>%
   separate(
     col = SNPID,
     into = c("CHR", "POS"),
     sep = "_", # O caractere que separa as colunas
     remove = FALSE, # Mantém a coluna original SNPID
-    convert = TRUE # Tenta converter automaticamente CHR para texto e POS para número
+    convert = TRUE # converter automaticamente CHR para texto e POS para número
   )
 
-# Limpeza do nome do cromossomo
 map_Cc$CHR <- gsub("chr|c", "", map_Cc$CHR)
 
-# CORREÇÃO CRÍTICA: Ordenar os cromossomos numericamente
-# Primeiro, pegamos os nomes únicos dos cromossomos
-# Depois, convertemos para número e ordenamos, e então de volta para caractere.
+
 ordered_levels_Cc <- unique(map_Cc$CHR) %>% as.numeric() %>% sort() %>% as.character()
 
-# Aplicamos essa ordem correta ao criar o fator
 map_Cc$CHR <- factor(map_Cc$CHR, levels = ordered_levels_Cc)
 
-# Verificação final
 cat("Dimensões do mapa 'Cc':", dim(map_Cc), "\n")
 head(map_Cc)
 cat("Ordem dos cromossomos em 'Cc':", levels(map_Cc$CHR), "\n")
 
 
-# --- Repetir o processo para o alinhamento Eugenioides (Ce) ---
 cat("\nProcessando 'Ce'...\n")
 map_Ce <- data.frame(SNPID = colnames(snp_Ce)) %>%
   separate(SNPID, into = c("CHR", "POS"), sep = "_", remove = FALSE, convert = TRUE)
@@ -1425,11 +1404,47 @@ head(map_Ce)
 cat("Ordem dos cromossomos em 'Ce':", levels(map_Ce$CHR), "\n")
 
 
-# --- Salvar os Resultados ---
-# Salva a matriz de genótipos JUNTO com seu mapa correspondente.
+
 save(snp_Cc, map_Cc, file = "snp_filtered_Cc.rda")
 save(snp_Ce, map_Ce, file = "snp_filtered_Ce.rda")
 
 cat("\nMatrizes de dosagens e mapas físicos foram salvos com sucesso!\n")
 ```
 
+```{r}
+# --- SOLUÇÃO: Criar tabela de tamanhos a partir do objeto DNA já carregado ---
+
+# Verifica se o objeto 'dna' existe. Se não, recarregue-o como fez no início do script.
+if (!exists("dna")) {
+  stop("O objeto 'dna' não foi encontrado. Por favor, rode o bloco inicial onde você usa read.dna()")
+}
+
+# Calcula o comprimento de cada sequência no objeto DNA
+chr_lengths <- sapply(dna, length)
+
+# Cria o data frame 'sizes' com o formato que o código precisa
+sizes <- data.frame(
+  CHR = names(dna),
+  LENGTH = chr_lengths
+)
+
+# Remove "sizes.genome" da lógica e usa o objeto criado internamente
+# (O resto do código abaixo continua igual, apenas removemos o read.table)
+```
+
+
+```{r plot_snp_density, cache=FALSE, warning=FALSE}
+load("snp_filtered_Cc.rda")
+load("snp_filtered_Ce.rda")
+#sizes <- read.table("sizes.genome")
+colnames(sizes) <- c("CHR","POS")
+sizes$CHR <- gsub(pattern = "chr", replacement = "", sizes$CHR)
+sizes$SNPID <- paste0("chr", sizes$CHR, "_", sizes$POS)
+map_Cc <- rbind(map_Cc, sizes[seq(1,nrow(sizes),2),])
+map_Cc$CHR <- factor(map_Cc$CHR, levels = sizes$CHR[seq(1,nrow(sizes),2)])
+map_Ce <- rbind(map_Ce, sizes[seq(2,nrow(sizes),2),])
+map_Ce$CHR <- factor(map_Ce$CHR, levels = sizes$CHR[seq(2,nrow(sizes),2)])
+cyto_Cc <- CMplot(map_Cc, type = "p", plot.type = "d", bin.size = 1e6, bin.breaks = seq(0, 50, 5), chr.den.col = c("darkgreen", "yellow", "red"), verbose = FALSE, chr.pos.max = TRUE, file.output = TRUE, file = "pdf", file.name = "Cc")
+cyto_Ce <- CMplot(map_Ce, type = "p", plot.type = "d", bin.size = 1e6, bin.breaks = seq(0, 50, 5), chr.den.col = c("darkgreen", "yellow", "red"), verbose = FALSE, chr.pos.max = TRUE, file.output = TRUE, file = "pdf", file.name = "Ce")
+
+```
