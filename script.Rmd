@@ -61,72 +61,46 @@ rm(list = ls())
 gc(verbose = FALSE)
 ```
 
-```{r, cache=FALSE}
-
-library(vcfR)
+```{r, cache=FALSE, eval=FALSE}
 library(ape)
-library(stringr)
-library(ggplot2)
-
-# Carregar os arquivos
-vcf_Cc <- vcfR::read.vcfR("Cc_var_norm_filter_BIAL_QUAL_AF_NS_flex.vcf")
-gff <- ape::read.gff("genomic.gff")
-dna <- ape::read.dna("GCF_036785885.1_Coffea_Arabica_ET-39_HiFi_genomic.fna", format = "fasta")
-
-# Criar a tabela de mapeamento
-region_info <- gff[gff$type == "region", ]
-bio_names <- sapply(as.character(region_info$attributes), function(attr_string) {
-  fields <- strsplit(attr_string, ";")[[1]]
-  chrom_field <- grep("chromosome=", fields, value = TRUE)
-  if (length(chrom_field) == 0) return(NA)
-  return(strsplit(chrom_field, "=")[[1]][2])
-})
-chrom_map <- data.frame(
-  ncbi_id = as.character(region_info$seqid),
-  bio_name = bio_names
-)
-chrom_map <- chrom_map[chrom_map$bio_name != "Unknown", ]
-chrom_map <- na.omit(chrom_map)
-```
+library(vcfR)
 
 
-```{r, cache=FALSE}
-# Padronizar GFF: Substituir 'NC_...' por '1c', '1e', etc.
-gff_chroms <- as.character(gff$seqid)
-gff$seqid <- chrom_map$bio_name[match(gff_chroms, chrom_map$ncbi_id)]
+print("Carregando arquivo GFF...")
+gff <- ape::read.gff("Carabica_IGC.gff3.gz")
 
-# Padronizar DNA: Substituir 'NC_...' por '1c', '1e', etc.
-dna_ids <- word(names(dna), 1) 
-names(dna) <- chrom_map$bio_name[match(dna_ids, chrom_map$ncbi_id)]
+print("Carregando arquivo FASTA...")
+dna <- ape::read.dna("Carabicageisha_871_1.0.fa.gz", format = "fasta")
 
-# Padronizar VCF: Remover o prefixo 'chr' para ter '1c', '1e', etc.
-vcf_Cc@fix[, 'CHROM'] <- gsub("chr", "", getCHROM(vcf_Cc))
-
-# Remover qualquer elemento que não foi padronizado (virou NA)
-gff <- gff[!is.na(gff$seqid), ]
-dna <- dna[!is.na(names(dna))]
-vcf_Cc <- vcf_Cc[!is.na(getCHROM(vcf_Cc)), ]
-
-print("Nomes padronizados. Verificando o número de variantes restantes no VCF:")
-print(nrow(vcf_Cc@fix))
+print("Carregando arquivo VCF...")
+vcf_Cc <- read.vcfR("Ce_var_norm_filter_BIAL_QUAL_AF_NS_flex.vcf") 
 
 
-# Selecionar a sequência de DNA para o cromossomo '1c'
-dna_1c <- dna[names(dna) == '1c']
+gff <- gff[which(substr(gff$seqid, 1, 3) == "chr"),]
 
-# Criar o objeto.
-chrom <- create.chromR(name = '1c', vcf = vcf_Cc, seq = dna_1c, ann = gff)
-png(filename = "grafico_qc_cromossomo_1c.png", width = 800, height = 1000)
 
-# 2. Executa o comando para criar o gráfico.
-chromoqc(chrom, dp.alpha = 50)
+chr_levels <- paste0("chr", rep(1:11, each=2), c("c","e"))
+gff$seqid <- factor(gff$seqid, levels = chr_levels)
+gff <- gff[order(gff$seqid), ]
 
-# 3. CRUCIAL: Fecha o dispositivo. Isso finaliza e salva o arquivo no seu computador.
-dev.off()
+print("Nomes dos cromossomos no VCF (primeiros 6 SNPs):")
+print(head(getCHROM(vcf_Cc)))
+print("Nomes dos cromossomos no FASTA:")
+print(names(dna))
+print("Nomes dos cromossomos no GFF (níveis do fator):")
+print(levels(gff$seqid))
 
-# Gerar a visualização de controle de qualidade
-print("Objeto chromR criado com sucesso! Gerando o gráfico...")
-chromoqc(chrom, dp.alpha = 50)
+
+cromossomo_alvo <- "chr1c"
+
+print(paste("Integrando dados para o cromossomo:", cromossomo_alvo))
+chrom <- create.chromR(name=cromossomo_alvo, vcf=vcf_Cc, seq=dna, ann=gff)
+
+print("Gerando gráfico de densidade de variantes...")
+plot(chrom)
+
+print("Gerando gráficos de controle de qualidade...")
+chromoqc(chrom)
 ```
 
 ```{r, cache=FALSE}
@@ -256,6 +230,8 @@ ggsave("distribuicao_profundidade_leitura.png", width = 8, height = 6, dpi = 300
 
 tapply(longmat$DP, longmat$Reference, median, na.rm = TRUE)
 ```
+
+
 ```{r, cache=FALSE}
 
 # contagem de reads do alelo referencia 
@@ -509,70 +485,59 @@ for(i in 1:length(indices)) {
 # library(vcfR)
 # library(dplyr)   # ou library(tidyverse)
 # library(ggplot2)
-
-drawsp <- function(vcf, 
-                            snp, 
-                            ploidy = 4, 
-                            samples_to_remove = NULL, 
-                            title = NULL, 
-                            color_palette = c("0" = "#0072B2", "1" = "#009E73", "2" = "#D55E00", 
-                                              "3" = "#CC79A7", "4" = "#F0E442", "NA" = "grey50")) {
+drawsp <- function(tidy_df, 
+                               snp_id, 
+                               ploidy = 4, 
+                               samples_to_remove = NULL, 
+                               plot_title = NULL, 
+                               color_palette = c("0" = "#0072B2", "1" = "#009E73", "2" = "#D55E00", 
+                                                 "3" = "#CC79A7", "4" = "#F0E442", "NA" = "grey50")) {
   
-  vcf_long <- vcfR2tidy(vcf, single_frame = TRUE)
-  
-  vcf_long$dat$gt_AO <- as.integer(vcf_long$dat$gt_AO)
-  vcf_long$dat$gt_RO <- as.integer(vcf_long$dat$gt_RO) # Adicionado para garantir que RO também é numérico
-  vcf_long$dat$gt_GT_alleles[vcf_long$dat$gt_GT_alleles == "."] <- NA
-  vcf_long$dat$ID <- paste(vcf_long$dat$CHROM, vcf_long$dat$POS, sep = "_")
-  
-  dfdat <- vcf_long$dat %>% filter(ID == snp)
+  # Filtra os dados para o SNP de interesse
+  dfdat <- tidy_df %>% filter(ID == snp_id)
   
   if (nrow(dfdat) == 0) {
-    stop(paste0("ERRO: O SNP '", snp, "' não foi encontrado no arquivo VCF."))
+    stop(paste0("ERRO: O SNP '", snp_id, "' não foi encontrado nos dados processados."))
   }
   
   if (!is.null(samples_to_remove)) {
-    # A coluna com nomes de amostra no vcfR2tidy é 'Indiv'
     dfdat <- dfdat %>% filter(!Indiv %in% samples_to_remove)
-    
     if (nrow(dfdat) == 0) {
-      stop(paste0("ERRO: Todas as amostras para o SNP '", snp, "' foram removidas."))
+      stop(paste0("ERRO: Todas as amostras para o SNP '", snp_id, "' foram removidas."))
     }
   }
   
+  
+  # lapply(sum) soma os números para obter a dose.
+  dose_values <- lapply(strsplit(dfdat$gt_GT, "[/|]"), as.integer)
   dfdat$Dose <- factor(
-    unlist(lapply(lapply(strsplit(dfdat$gt_GT, "/"), as.integer), sum)), 
-    levels = 0:ploidy, # Garante que todos os níveis de dose existam
+    sapply(dose_values, sum, na.rm = TRUE),
+    levels = 0:ploidy,
     ordered = TRUE
   )
   
-  # 6. Calcula as linhas de referência para as proporções alélicas esperadas
-  pk <- (0:ploidy)/ploidy
-  maxcount <- max(c(dfdat$gt_RO, dfdat$gt_AO), na.rm = TRUE) + 1
-  slopevec <- pk/(1 - pk)
-  xend <- pmin(rep(maxcount, ploidy + 1), maxcount/slopevec)
+  #Calcula as linhas de referência para as proporções alélicas esperadas
+  pk <- (0:ploidy) / ploidy
+  maxcount <- max(c(dfdat$gt_RO, dfdat$gt_AO), na.rm = TRUE) * 1.05 
+  slopevec <- pk / (1 - pk)
+  # Evita divisão por zero para o caso de dose = ploidy (pk=1)
+  slopevec[is.infinite(slopevec)] <- 1e9 
+  xend <- pmin(rep(maxcount, ploidy + 1), maxcount / slopevec)
   yend <- pmin(rep(maxcount, ploidy + 1), maxcount * slopevec)
   df_lines <- data.frame(x = 0, y = 0, xend = xend, yend = yend, Dose = factor(0:ploidy))
 
-  # 7. Constrói o gráfico com ggplot2
-  plot_title <- if (is.null(title)) snp else title
+  # 6. Constrói o gráfico com ggplot2
+  final_title <- if (is.null(plot_title)) snp_id else plot_title
   
   p <- ggplot(dfdat, aes(x = gt_RO, y = gt_AO)) +
-    geom_point(aes(color = Dose), na.rm = TRUE, size = 2, alpha = 0.8) +
-    geom_segment(data = df_lines, mapping = aes(x = x, y = y, xend = xend, yend = yend), 
+    geom_segment(data = df_lines, aes(x = x, y = y, xend = xend, yend = yend),
                  lty = 2, alpha = 0.7, color = "black", linewidth = 0.5) +
-    scale_color_manual(values = color_palette, 
-                       name = "Dose",
-                       drop = FALSE, # Garante que todas as cores da legenda apareçam
-                       na.translate = FALSE) +
-    labs(title = plot_title, 
-         x = "Contagem Alelo Referência (RO)", 
-         y = "Contagem Alelo Alternativo (AO)") +
+    geom_point(aes(color = Dose), na.rm = TRUE, size = 1.5, alpha = 0.8) +
+    scale_color_manual(values = color_palette, name = "Dose (VCF)", drop = FALSE, na.translate = FALSE) +
+    labs(title = final_title, x = "Leituras de Referência (RO)", y = "Leituras Alternativas (AO)") +
+    coord_cartesian(xlim = c(0, maxcount), ylim = c(0, maxcount)) + # Garante que as linhas sejam visíveis
     theme_bw(base_size = 12) + 
-    theme(
-      plot.title = element_text(hjust = 0.5),
-      legend.position = "right"
-    )
+    theme(plot.title = element_text(hjust = 0.5), legend.position = "right")
   
   return(p)
 }
@@ -611,182 +576,96 @@ biased_snps <- snp_metrics_Cc %>%
 
 print(biased_snps)
 ```
-``
+
+```{r,cache=False}
+
+library(vcfR)
+library(tidyverse)
+library(ggpubr) 
+
+
+print("--- Convertendo VCF para formato tidy ---")
+vcf_tidy_list <- vcfR2tidy(vcf_Cc_raw, single_frame = TRUE)
+vcf_tidy_Cc <- vcf_tidy_list$dat
+rm(vcf_tidy_list); gc()
+
+print("--- Adicionando a coluna ID ---")
+vcf_tidy_Cc$gt_AO <- as.integer(vcf_tidy_Cc$gt_AO)
+vcf_tidy_Cc$gt_RO <- as.integer(vcf_tidy_Cc$gt_RO)
+vcf_tidy_Cc$ID <- paste(vcf_tidy_Cc$CHROM, vcf_tidy_Cc$POS, sep = "_")
+
+print("---Verificando a estrutura dos dados processados ---")
+print("Nomes das colunas do data.frame 'vcf_tidy_Cc':")
+print(colnames(vcf_tidy_Cc))
+
+print("Primeiras linhas do data.frame 'vcf_tidy_Cc':")
+print(head(vcf_tidy_Cc[, c("CHROM", "POS", "ID", "Indiv", "gt_RO", "gt_AO")]))
+
+
+```
 
 ```{r,cache=FALSE}
-col_pal = c(`0`="#E69F00", `1`="#56B4E9", `2`="#009E73", `3`="#CC46A7", `4`="#999999", `NA` = "grey50")
-#dir.create("diagnostico_snps", showWarnings = FALSE)
-#dir.create("diagnostico_snps/melhores_snps_Cc", showWarnings = FALSE)
-#dir.create("diagnostico_snps/snps_com_vies_Cc", showWarnings = FALSE)
+
+col_pal <- c(`0`="#E69F00", `1`="#56B4E9", `2`="#009E73", `3`="#CC46A7", `4`="#999999", `NA` = "grey50")
+
+#dir.create("diagnostico_snps/melhores_snps_Cc", showWarnings = TRUE, recursive = TRUE)
 
 for (snp_id in best_snps) {
   
-  # Gráfico 1: Genotipagem bruta do VCF (usando sua função)
-  p1 <- drawsp(vcf = vcf_Cc_raw, snp = snp_id, ploidy = 4, title = TRUE) + labs(x = "Reads Ref.", y = "Reads Alt.")
+
+  p1 <- drawsp(tidy_df = vcf_tidy_Cc, snp_id = snp_id, ploidy = 4)
   
-  # Gráfico 2: Genotipagem do updog
- p2 <- updog:::plot.multidog(mout_Cc, indices = which(mout_Cc$snpdf$snp == snp_id))[[1]] +
-      scale_color_manual(values = col_pal, drop = FALSE, na.translate = FALSE) +
-      labs(color = "Dose (updog)", alpha = "Prob. Post.") +
-      theme(legend.position="top", plot.title = element_blank())
-    
-  # Combina os dois gráficos
-  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("FreeBayes", "Updog"), common.legend = FALSE, legend = "bottom")
+  p2 <- updog:::plot.multidog(mout_Cc, indices = which(mout_Cc$snpdf$snp == snp_id))[[1]] +
+        scale_color_manual(values = col_pal, drop = FALSE, na.translate = FALSE) +
+        labs(color = "Dose (updog)", alpha = "Prob. Post.") +
+        theme(legend.position="top", plot.title = element_blank())
+      
+  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("VCF Call", "Updog"), common.legend = FALSE, legend = "bottom")
   
-  # Salva o gráfico combinado em um arquivo
-  ggsave(filename = paste0("diagnostico_snps/melhores_snps_Cc/", snp_id, ".png"),
-    plot = combined_plot,
-    width = 10, height = 5, dpi = 150
-  )
-  }
+  ggsave(filename = paste0("diagnostico_snps/melhores_snps_Cc/", snp_id, "_.png"),
+      plot = combined_plot, width = 10, height = 5, dpi = 150)
+}
+
+#dir.create("diagnostico_snps/piores_snps_Cc", showWarnings = TRUE, recursive = TRUE)
 
 for (snp_id in worst_snps) {
   
-  # Gráfico 1: Genotipagem bruta do VCF (usando sua função)
-  p1 <- drawsp(vcf = vcf_Cc_raw, snp = snp_id, ploidy = 4, title = TRUE) + labs(x = "Reads Ref.", y = "Reads Alt.")
   
-  # Gráfico 2: Genotipagem do updog
- p2 <- updog:::plot.multidog(mout_Cc, indices = which(mout_Cc$snpdf$snp == snp_id))[[1]] +
-      scale_color_manual(values = col_pal, drop = FALSE, na.translate = FALSE) +
-      labs(color = "Dose (updog)", alpha = "Prob. Post.") +
-      theme(legend.position="top", plot.title = element_blank())
-    
-  # Combina os dois gráficos
-  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("FreeBayes", "Updog"), common.legend = FALSE, legend = "bottom")
   
-  # Salva o gráfico combinado em um arquivo
+  p1 <- drawsp(tidy_df = vcf_tidy_Cc, snp_id = snp_id, ploidy = 4)
+  
+  p2 <- updog:::plot.multidog(mout_Cc, indices = which(mout_Cc$snpdf$snp == snp_id))[[1]] +
+        scale_color_manual(values = col_pal, drop = FALSE, na.translate = FALSE) +
+        labs(color = "Dose (updog)", alpha = "Prob. Post.") +
+        theme(legend.position="top", plot.title = element_blank())
+      
+  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("VCF Call", "Updog"), common.legend = FALSE, legend = "bottom")
+  
   ggsave(filename = paste0("diagnostico_snps/piores_snps_Cc/", snp_id, ".png"),
-    plot = combined_plot,
-    width = 10, height = 5, dpi = 150
-  )
+      plot = combined_plot, width = 10, height = 5, dpi = 150)
 }
+
+#dir.create("diagnostico_snps/vies_snps_Cc", showWarnings = TRUE, recursive = TRUE)
 
 for (snp_id in biased_snps) {
   
-  # Gráfico 1: Genotipagem bruta do VCF (usando sua função)
-  p1 <- drawsp(vcf = vcf_Cc_raw, snp = snp_id, ploidy = 4, title = TRUE) + labs(x = "Reads Ref.", y = "Reads Alt.")
+
+  p1 <- drawsp(tidy_df = vcf_tidy_Cc, snp_id = snp_id, ploidy = 4)
   
-  # Gráfico 2: Genotipagem do updog
- p2 <- updog:::plot.multidog(mout_Cc, indices = which(mout_Cc$snpdf$snp == snp_id))[[1]] +
-      scale_color_manual(values = col_pal, drop = FALSE, na.translate = FALSE) +
-      labs(color = "Dose (updog)", alpha = "Prob. Post.") +
-      theme(legend.position="top", plot.title = element_blank())
-    
-  # Combina os dois gráficos
-  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("FreeBayes", "Updog"), common.legend = FALSE, legend = "bottom")
+  p2 <- updog:::plot.multidog(mout_Cc, indices = which(mout_Cc$snpdf$snp == snp_id))[[1]] +
+        scale_color_manual(values = col_pal, drop = FALSE, na.translate = FALSE) +
+        labs(color = "Dose (updog)", alpha = "Prob. Post.") +
+        theme(legend.position="top", plot.title = element_blank())
+      
+  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("VCF Call", "Updog"), common.legend = FALSE, legend = "bottom")
   
-  # Salva o gráfico combinado em um arquivo
-  ggsave(filename = paste0("diagnostico_snps/snps_com_vies_Cc/", snp_id, ".png"),
-    plot = combined_plot,
-    width = 10, height = 5, dpi = 150
-  )
-}
-```
-
-```{r}
-load("mout_Ce.rda")
-
-library(vcfR)
-
-vcf_Ce_raw <- read.vcfR("Ce_var_norm_filter_BIAL_QUAL_AF_NS_flex.vcf", verbose = FALSE)
-
-snp_metrics_Ce <- mout_Ce$snpdf
-
-summary(snp_metrics_Ce[, c( "bias", "od", "prop_mis")])
-
-best_snps_Ce <- snp_metrics_Ce %>% 
-  dplyr::filter(prop_mis < 0.02, bias > 0.9, bias < 1.1, od < 0.01) %>% # filtra os SNPs
-  dplyr::slice_sample(n=5) %>% # pega 5 exemplos aleatórios 
-  dplyr::pull(snp) #extrai apenas o nome dos SNPs
-
-print(best_snps_Ce)
-
-worst_snps_Ce <- snp_metrics_Ce %>%
-  dplyr::filter(prop_mis > 0.4) %>%
-  dplyr::slice_sample(n = 5) %>%
-  dplyr::pull(snp)
-
-print(worst_snps_Ce)
-
-
-biased_snps_Ce <- snp_metrics_Ce %>%
-  dplyr::filter(prop_mis < 0.1, bias > 1.5 | bias < 0.7) %>%
-  dplyr::slice_sample(n = 5) %>%
-  dplyr::pull(snp)
-
-print(biased_snps_Ce)
-```
-
-```{r}
-col_pal = c(`0`="#E69F00", `1`="#56B4E9", `2`="#009E73", `3`="#CC46A7", `4`="#999999", `NA` = "grey50")
-#dir.create("diagnostico_snps", showWarnings = FALSE)
-dir.create("diagnostico_snps/melhores_snps_Ce", showWarnings = FALSE)
-dir.create("diagnostico_snps/piores_snps_Ce", showWarnings = FALSE)
-dir.create("diagnostico_snps/snps_com_vies_Ce", showWarnings = FALSE)
-
-for (snp_id in best_snps_Ce) {
-  
-  # Gráfico 1: Genotipagem bruta do VCF (usando sua função)
-  p1 <- drawsp(vcf = vcf_Ce_raw, snp = snp_id, ploidy = 4, title = TRUE) + labs(x = "Reads Ref.", y = "Reads Alt.")
-  
-  # Gráfico 2: Genotipagem do updog
- p2 <- updog:::plot.multidog(mout_Ce, indices = which(mout_Ce$snpdf$snp == snp_id))[[1]] +
-      scale_color_manual(values = col_pal, drop = FALSE, na.translate = FALSE) +
-      labs(color = "Dose (updog)", alpha = "Prob. Post.") +
-      theme(legend.position="top", plot.title = element_blank())
-    
-  # Combina os dois gráficos
-  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("FreeBayes", "Updog"), common.legend = FALSE, legend = "bottom")
-  
-  # Salva o gráfico combinado em um arquivo
-  ggsave(filename = paste0("diagnostico_snps/melhores_snps_Ce/", snp_id, ".png"),
-    plot = combined_plot,
-    width = 10, height = 5, dpi = 150
-  )
-  }
-
-for (snp_id in worst_snps_Ce) {
-  
-  # Gráfico 1: Genotipagem bruta do VCF (usando sua função)
-  p1 <- drawsp(vcf = vcf_Ce_raw, snp = snp_id, ploidy = 4, title = TRUE) + labs(x = "Reads Ref.", y = "Reads Alt.")
-  
-  # Gráfico 2: Genotipagem do updog
- p2 <- updog:::plot.multidog(mout_Ce, indices = which(mout_Ce$snpdf$snp == snp_id))[[1]] +
-      scale_color_manual(values = col_pal, drop = FALSE, na.translate = FALSE) +
-      labs(color = "Dose (updog)", alpha = "Prob. Post.") +
-      theme(legend.position="top", plot.title = element_blank())
-    
-  # Combina os dois gráficos
-  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("FreeBayes", "Updog"), common.legend = FALSE, legend = "bottom")
-  
-  # Salva o gráfico combinado em um arquivo
-  ggsave(filename = paste0("diagnostico_snps/piores_snps_Ce/", snp_id, ".png"),
-    plot = combined_plot,
-    width = 10, height = 5, dpi = 150
-  )
+  ggsave(filename = paste0("diagnostico_snps/vies_snps_Cc/", snp_id, ".png"),
+      plot = combined_plot, width = 10, height = 5, dpi = 150)
 }
 
-for (snp_id in biased_snps_Ce) {
-  
-  # Gráfico 1: Genotipagem bruta do VCF (usando sua função)
-  p1 <- drawsp(vcf = vcf_Ce_raw, snp = snp_id, ploidy = 4, title = TRUE) + labs(x = "Reads Ref.", y = "Reads Alt.")
-  
-  # Gráfico 2: Genotipagem do updog
- p2 <- updog:::plot.multidog(mout_Ce, indices = which(mout_Ce$snpdf$snp == snp_id))[[1]] +
-      scale_color_manual(values = col_pal, drop = FALSE, na.translate = FALSE) +
-      labs(color = "Dose (updog)", alpha = "Prob. Post.") +
-      theme(legend.position="top", plot.title = element_blank())
-    
-  # Combina os dois gráficos
-  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("FreeBayes", "Updog"), common.legend = FALSE, legend = "bottom")
-  
-  # Salva o gráfico combinado em um arquivo
-  ggsave(filename = paste0("diagnostico_snps/snps_com_vies_Ce/", snp_id, ".png"),
-    plot = combined_plot,
-    width = 10, height = 5, dpi = 150
-  )
-}
 ```
+
+
 
 ```{r}
 
@@ -814,27 +693,23 @@ Aa00_outlier <- c("chr5c_1069263", "chr6c_565948", "chr6c_1483304", "chr6c_21769
 
 ```{r}
 
-for (snp_id in strong_bias5) {
+for (snp_id in AAaa_outlier) {
   
-  # Gráfico 1: Genotipagem bruta do VCF (usando sua função)
-  p1 <- drawsp(vcf = vcf_Cc_raw, snp = snp_id, ploidy = 4, title = TRUE) + labs(x = "Reads Ref.", y = "Reads Alt.")
+
+  p1 <- drawsp(tidy_df = vcf_tidy_Cc, snp_id = snp_id, ploidy = 4)
   
-  # Gráfico 2: Genotipagem do updog
- p2 <- updog:::plot.multidog(mout_Cc, indices = which(mout_Cc$snpdf$snp == snp_id))[[1]] +
-      scale_color_manual(values = col_pal, drop = FALSE, na.translate = FALSE) +
-      labs(color = "Dose (updog)", alpha = "Prob. Post.") +
-      theme(legend.position="top", plot.title = element_blank())
-    
-  # Combina os dois gráficos
-  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("FreeBayes", "Updog"), common.legend = FALSE, legend = "bottom")
+  p2 <- updog:::plot.multidog(mout_Cc, indices = which(mout_Cc$snpdf$snp == snp_id))[[1]] +
+        scale_color_manual(values = col_pal, drop = FALSE, na.translate = FALSE) +
+        labs(color = "Dose (updog)", alpha = "Prob. Post.") +
+        theme(legend.position="top", plot.title = element_blank())
+      
+  combined_plot <- ggpubr::ggarrange(p1, p2, ncol = 2, labels = c("VCF Call", "Updog"), common.legend = FALSE, legend = "bottom")
   
-  # Salva o gráfico combinado em um arquivo
-  ggsave(filename = paste0("diagnostico_snps/strong_bias5/", snp_id, ".png"),
-    plot = combined_plot,
-    width = 10, height = 5, dpi = 150
-  )
+  ggsave(filename = paste0("diagnostico_snps/AAaa_outlier_Cc/", snp_id, "_.png"),
+      plot = combined_plot, width = 10, height = 5, dpi = 150)
 }
 ```
+
 
 ```{r, cache=FALSE}
 
@@ -1048,18 +923,6 @@ chisq_map(map = map_Ccud, cols = 9:11)
 chisq_map(map = map_Cc2, cols = 7)
 #chisq_map(map = map_Cc4, cols = 9:11)
 ```
-```{r}
-library(dplyr)
-
-
-map_Cc_all_tests <- map_Ccud %>%
-  select(
-    SNPID, CHR, POS,
-    p_val_diploide     = `1:2:1`,
-    p_val_tetra_sem_dr = `1:4:6:4:1`,
-    p_val_tetra_com_dr = `1:8:18:8:1`
-  )
-```
 
 
 ```{r}
@@ -1140,23 +1003,19 @@ ggsave("chisq_3_callers.png", width = 6, height = 4, dpi = 400)
 map_Cc2_pval <- map_Cc2 %>%
   select(SNPID, p_val_disomic = `1:2:1`)
 
-# Use left_join para adicionar a coluna de p-valor dissômico ao dataframe mestre
+# adicionar a coluna de p-valor dissômico ao dataframe 
 map_Cc_all_tests <- left_join(map_Cc_all_tests, map_Cc2_pval, by = "SNPID")
 
-# Verifique o resultado
-cat("Dataframe mestre criado com sucesso. Dimensões:", dim(map_Cc_all_tests), "\n")
 head(map_Cc_all_tests)
 
 
-# --- ETAPA 3: ANÁLISE E PLOTAGEM (SEU ÚLTIMO BLOCO, AGORA CORRIGIDO) ---
 
 cat("Iniciando a análise dos modelos de segregação...\n")
 
-# 1. Defina o limiar de significância de Bonferroni
+#limiar de significância de Bonferroni
 bonferroni_threshold <- 0.05 / nrow(map_Cc_all_tests)
 
 # 2. Identifique os SNPs que se ajustam a cada modelo
-#    Filtramos NAs para evitar erros nos índices
 idx_seg_disomic <- which(map_Cc_all_tests$p_val_disomic > bonferroni_threshold)
 idx_seg_tet_sem_dr <- which(map_Cc_all_tests$p_val_tetra_sem_dr > bonferroni_threshold)
 idx_seg_tet_com_dr <- which(map_Cc_all_tests$p_val_tetra_com_dr > bonferroni_threshold)
@@ -1165,28 +1024,22 @@ cat("SNPs ajustados ao modelo Dissômico (1:2:1):", length(idx_seg_disomic), "\n
 cat("SNPs ajustados ao modelo Tetra (sem DR):", length(idx_seg_tet_sem_dr), "\n")
 cat("SNPs ajustados ao modelo Tetra (com DR):", length(idx_seg_tet_com_dr), "\n")
 
-# 3. Crie um conjunto com TODOS os SNPs que passaram em PELO MENOS UM dos testes
 idx_good_snps <- unique(c(idx_seg_disomic, idx_seg_tet_sem_dr, idx_seg_tet_com_dr))
 cat("Total de SNPs com segregação esperada:", length(idx_good_snps), "\n")
 
-# Crie o dataframe de segregação usando apenas esses SNPs de alta qualidade
 df_seg <- map_Cc_all_tests[idx_good_snps, ]
 
-# 4. Determine o "melhor" modelo para cada SNP
-#    Agora os nomes das colunas são os que definimos acima
+
 p_val_columns <- c("p_val_disomic", "p_val_tetra_sem_dr", "p_val_tetra_com_dr")
 
-# O apply() pode retornar NAs se todas as colunas de p-valor forem NA para uma linha.
-# Adicionamos na.rm = TRUE para lidar com isso
+
 best_model_idx <- apply(df_seg[, p_val_columns], 1, function(row) {
   if (all(is.na(row))) NA else which.max(row)
 })
 
 
-# Atribua o nome do melhor modelo
 df_seg$SegregationModel <- p_val_columns[best_model_idx]
 
-# Deixe os nomes mais amigáveis para a legenda
 df_seg$SegregationModel <- case_when(
   df_seg$SegregationModel == "p_val_disomic" ~ "Dissômico (1:2:1)",
   df_seg$SegregationModel == "p_val_tetra_sem_dr" ~ "Tetrassômico (sem DR)",
@@ -1194,7 +1047,6 @@ df_seg$SegregationModel <- case_when(
   TRUE ~ NA_character_
 )
 
-# 5. Prepare os dados para o gráfico
 df_plot <- df_seg %>%
   filter(!is.na(SegregationModel)) %>% # Remove SNPs onde nenhum modelo pôde ser determinado
   count(CHR, SegregationModel) %>%
@@ -1231,125 +1083,243 @@ ggsave(
 ```
 
 ```{r}
-f2 <- which(map_Ccud$`1:2:1` > 0.05/nrow(map_Ccud)); length(f2)
-f2allo <- which(map_Ccud$`1:4:6:4:1` > 0.05/nrow(map_Ccud)); length(f2allo)
-f2auto <- which(map_Ccud$`1:8:18:8:1` > 0.05/nrow(map_Ccud)); length(f2auto)
-length(unique(c(f2, f2allo, f2auto)))
 
-df_seg <- map_Ccud[f2,]
-df_seg$Segregation <- apply(df_seg[,9:11], 1, which.max)
-df_seg$Segregation <- factor(df_seg$Segregation, labels = colnames(df_seg)[9:11])
-df_seg <- data.frame(table(df_seg$CHR, df_seg$Segregation))
-ggplot(df_seg, aes(x=Var1, y = Freq, fill = Var2)) +
-  geom_bar(position="fill", stat="identity") +
-  scale_y_continuous(labels = function(x) x*100, expand = c(0,0)) +
-  labs(y = "Frequency (%)", alpha = "Number of\nclasses") +
-  theme_classic() +
-  theme(strip.background = element_blank())
-ggsave("segr.png", width = 7, height = 4, dpi = 400)
+library(dplyr)
+
+map_Cc_all_tests <- map_Cc 
+
+#Extrair p-valores do dataframe do updog (map_Ccud)
+pvals_updog <- map_Ccud %>%
+  select(
+    SNPID,
+    p_val_updog_disomic = `1:2:1`,
+    p_val_updog_tet_sem_dr = `1:4:6:4:1`,
+    p_val_updog_tet_com_dr = `1:8:18:8:1`
+  )
+
+#Extrair p-valores do dataframe do FreeBayes (map_Cc2)
+pvals_freebayes <- map_Cc2 %>%
+  select(
+    SNPID,
+    p_val_freebayes_disomic = `1:2:1`
+  )
+  
+#Extrair p-valores do dataframe do segtest (map_Ccst)
+pvals_segtest <- map_Ccst %>%
+  select(
+    SNPID,
+    p_val_segtest = `p_value.x`#usar crase se tiver um ponto no nome
+  )
+
+map_Cc_all_tests <- map_Cc_all_tests %>%
+  left_join(pvals_updog, by = "SNPID") %>%
+  left_join(pvals_freebayes, by = "SNPID") %>%
+  left_join(pvals_segtest, by = "SNPID")
+
+print(colnames(map_Cc_all_tests))
+print(head(map_Cc_all_tests))
+
+save(map_Cc_all_tests, file = "map_Cc_all_tests.rda")
 ```
+```{r}
+
+# load("map_Cc_all_tests.rda")
+
+
+p_val_columns <- c("p_val_updog_disomic", "p_val_updog_tet_sem_dr", "p_val_updog_tet_com_dr")
+
+if (!all(p_val_columns %in% colnames(map_Cc_all_tests))) {
+  stop("ERRO: Uma ou mais colunas  não foram encontradas no dataframe.")
+}
+
+print(summary(map_Cc_all_tests[, p_val_columns]))
+
+threshold_usado <- 0.05 / nrow(map_Cc_all_tests) # Limiar de Bonferroni
+cat("\nUsando um limiar de p-valor de:", threshold_usado, "\n")
+
+idx_good_snps <- map_Cc_all_tests %>%
+  filter(
+    p_val_updog_disomic > threshold_usado |
+    p_val_updog_tet_sem_dr > threshold_usado |
+    p_val_updog_tet_com_dr > threshold_usado
+  )
+
+
+if (nrow(idx_good_snps) > 0) {
+  
+  df_seg <- idx_good_snps
+  
+  best_model_indices <- apply(df_seg[, p_val_columns], 1, which.max)
+  df_seg$SegregationModel <- p_val_columns[best_model_indices]
+  
+  df_seg$SegregationModel <- case_when(
+    df_seg$SegregationModel == "p_val_updog_disomic" ~ "Dissômico (1:2:1)",
+    df_seg$SegregationModel == "p_val_updog_tet_sem_dr" ~ "Tetrassômico (sem DR)",
+    df_seg$SegregationModel == "p_val_updog_tet_com_dr" ~ "Tetrassômico (com DR)",
+    TRUE ~ NA_character_
+  )
+  
+  df_plot <- df_seg %>%
+    count(CHR, SegregationModel) %>%
+    rename(Chromosome = CHR, Frequency = n)
+  
+  library(ggplot2)
+  library(scales)
+  
+  meu_grafico <- ggplot(df_plot, aes(x = Chromosome, y = Frequency, fill = SegregationModel)) +
+    geom_bar(position = "fill", stat = "identity") +
+    scale_y_continuous(labels = percent, expand = c(0, 0)) +
+    scale_fill_manual(
+      values = c("Dissômico (1:2:1)" = "#56B4E9", 
+                 "Tetrassômico (sem DR)" = "#009E73", 
+                 "Tetrassômico (com DR)" = "#E69F00"),
+      name = "Modelo de Segregação (Updog)"
+    ) +
+    labs(
+      title = "Proporção de Modelos de Segregação por Cromossomo",
+      subtitle = paste("Baseado em", nrow(df_seg), "SNPs com p-valor >", format(threshold_usado, scientific = TRUE, digits = 2)),
+      x = "Cromossomo", y = "Proporção de SNPs (%)"
+    ) +
+    theme_classic() +
+    theme(legend.position = "bottom")
+  
+  print(meu_grafico)
+  ggsave("grafico_segregacao.png", plot = meu_grafico, width = 8, height = 6, dpi = 400)
+  
+} else {
+}
+```
+
 Perform manual filtering: 
 
+
 ```{r, cache=FALSE, eval=FALSE}
-load("snp_Ca.rda")
-load("snp_Cc.rda")
-load("snp_Ce.rda")
 
+load("snp_Ca.rda"); cat("Dimensões iniciais snp_Ca (SNPs x Amostras):", dim(snp_Ca), "\n")
+load("snp_Cc.rda"); cat("Dimensões iniciais snp_Cc (SNPs x Amostras):", dim(snp_Cc), "\n")
+load("snp_Ce.rda"); cat("Dimensões iniciais snp_Ce (SNPs x Amostras):", dim(snp_Ce), "\n")
 
-cat("--- Filtragem da Matriz de Dosagens ---\n")
-
-cat("\nProcessando a matriz 'Ca'...\n")
-
+# Transpõe as matrizes 
 snp_Ca <- t(snp_Ca)
-cat("Dimensões ANTES da filtragem (Amostras x Marcadores):", dim(snp_Ca), "\n")
-
-
-exclude_mrk_Ca <- marker.callrate(snp_Ca)
-cat(length(exclude_mrk_Ca), "marcadores em 'Ca' serão removidos (>25% de dados faltantes).\n")
-if (length(exclude_mrk_Ca) > 0) {
-  snp_Ca <- snp_Ca[, -exclude_mrk_Ca]
-}
-cat("Dimensões DEPOIS da filtragem (Amostras x Marcadores):", dim(snp_Ca), "\n")
-
-
-cat("\nProcessando a matriz 'Cc'...\n")
 snp_Cc <- t(snp_Cc)
-cat("Dimensões ANTES da filtragem (Amostras x Marcadores):", dim(snp_Cc), "\n")
-exclude_mrk_Cc <- marker.callrate(snp_Cc)
-cat(length(exclude_mrk_Cc), "marcadores em 'Cc' serão removidos (>25% de dados faltantes).\n")
-if (length(exclude_mrk_Cc) > 0) {
-  snp_Cc <- snp_Cc[, -exclude_mrk_Cc]
-}
-cat("Dimensões DEPOIS da filtragem (Amostras x Marcadores):", dim(snp_Cc), "\n")
-
-
-cat("\nProcessando a matriz 'Ce'...\n")
 snp_Ce <- t(snp_Ce)
-cat("Dimensões ANTES da filtragem (Amostras x Marcadores):", dim(snp_Ce), "\n")
-exclude_mrk_Ce <- marker.callrate(snp_Ce)
-cat(length(exclude_mrk_Ce), "marcadores em 'Ce' serão removidos (>25% de dados faltantes).\n")
-if (length(exclude_mrk_Ce) > 0) {
-  snp_Ce <- snp_Ce[, -exclude_mrk_Ce]
-}
-cat("Dimensões DEPOIS da filtragem (Amostras x Marcadores):", dim(snp_Ce), "\n")
+cat("\nMatrizes transpostas para (Amostras x SNPs) para filtragem.\n\n")
 
-save(snp_Ca, file = "snp_Ca_filtered.rda")
-save(snp_Cc, file = "snp_Cc_filtered.rda")
-save(snp_Ce, file = "snp_Ce_filtered.rda")
+
+cat("-- Marcadores com >25% de dados faltantes ---\n")
+exclude.mrk_Ca <- marker.callrate(snp_Ca); cat("Marcadores a remover de Ca:", length(exclude.mrk_Ca), "\n")
+exclude.mrk_Cc <- marker.callrate(snp_Cc); cat("Marcadores a remover de Cc:", length(exclude.mrk_Cc), "\n")
+exclude.mrk_Ce <- marker.callrate(snp_Ce); cat("Marcadores a remover de Ce:", length(exclude.mrk_Ce), "\n")
+
+if (length(exclude.mrk_Ca) > 0) snp_Ca <- snp_Ca[, -exclude.mrk_Ca]
+if (length(exclude.mrk_Cc) > 0) snp_Cc <- snp_Cc[, -exclude.mrk_Cc]
+if (length(exclude.mrk_Ce) > 0) snp_Ce <- snp_Ce[, -exclude.mrk_Ce]
+cat("Dimensões após filtro de marcadores: Ca:", dim(snp_Ca), "| Cc:", dim(snp_Cc), "| Ce:", dim(snp_Ce), "\n\n")
+
+
+cat("--- Filtro 2: Indivíduos com >25% de dados faltantes ---\n")
+exclude.ind_Ca <- ind.callrate(snp_Ca); cat("Indivíduos a remover de Ca:", length(exclude.ind_Ca), "\n")
+exclude.ind_Cc <- ind.callrate(snp_Cc); cat("Indivíduos a remover de Cc:", length(exclude.ind_Cc), "\n")
+exclude.ind_Ce <- ind.callrate(snp_Ce); cat("Indivíduos a remover de Ce:", length(exclude.ind_Ce), "\n")
+
+if (length(exclude.ind_Ca) > 0) snp_Ca <- snp_Ca[-exclude.ind_Ca, ]
+if (length(exclude.ind_Cc) > 0) snp_Cc <- snp_Cc[-exclude.ind_Cc, ]
+if (length(exclude.ind_Ce) > 0) snp_Ce <- snp_Ce[-exclude.ind_Ce, ] # Corrigido de _Ca para _Ce
+cat("Dimensões após filtro de indivíduos: Ca:", dim(snp_Ca), "| Cc:", dim(snp_Cc), "| Ce:", dim(snp_Ce), "\n\n")
+
+
+cat("--- Filtro 3: Marcadores com frequência de classe >75% ---\n")
+exclude.class_Ca <- class.freq(snp_Ca); cat("Marcadores a remover de Ca:", length(exclude.class_Ca), "\n")
+exclude.class_Cc <- class.freq(snp_Cc); cat("Marcadores a remover de Cc:", length(exclude.class_Cc), "\n")
+exclude.class_Ce <- class.freq(snp_Ce); cat("Marcadores a remover de Ce:", length(exclude.class_Ce), "\n")
+
+if (length(exclude.class_Ca) > 0) snp_Ca <- snp_Ca[, -exclude.class_Ca]
+if (length(exclude.class_Cc) > 0) snp_Cc <- snp_Cc[, -exclude.class_Cc]
+if (length(exclude.class_Ce) > 0) snp_Ce <- snp_Ce[, -exclude.class_Ce]
+cat("Dimensões após filtro de classe: Ca:", dim(snp_Ca), "| Cc:", dim(snp_Cc), "| Ce:", dim(snp_Ce), "\n\n")
+
+
+cat("--- Filtro 4: Marcadores com MAF <25% ---\n")
+exclude.maf_Ca <- allele.freq(snp_Ca); cat("Marcadores a remover de Ca:", length(exclude.maf_Ca), "\n")
+exclude.maf_Cc <- allele.freq(snp_Cc); cat("Marcadores a remover de Cc:", length(exclude.maf_Cc), "\n")
+exclude.maf_Ce <- allele.freq(snp_Ce); cat("Marcadores a remover de Ce:", length(exclude.maf_Ce), "\n")
+
+if (length(exclude.maf_Ca) > 0) snp_Ca <- snp_Ca[, -exclude.maf_Ca]
+if (length(exclude.maf_Cc) > 0) snp_Cc <- snp_Cc[, -exclude.maf_Cc]
+if (length(exclude.maf_Ce) > 0) snp_Ce <- snp_Ce[, -exclude.maf_Ce]
+cat("Dimensões após filtro de MAF: Ca:", dim(snp_Ca), "| Cc:", dim(snp_Cc), "| Ce:", dim(snp_Ce), "\n\n")
+
+
+cat("--- Filtro 5: Marcadores redundantes ---\n")
+snp_Ca <- t(snp_Ca)
+snp_Ca <- snp_Ca[!duplicated(snp_Ca), ]
+cat("Dimensões finais snp_Ca (SNPs x Amostras):", dim(snp_Ca), "\n")
+print(table(gsub("chr|_.*", "", rownames(snp_Ca))))
+
+snp_Cc <- t(snp_Cc)
+snp_Cc <- snp_Cc[!duplicated(snp_Cc), ]
+cat("Dimensões snp_Cc (SNPs x Amostras):", dim(snp_Cc), "\n")
+print(table(gsub("chr|_.*", "", rownames(snp_Cc))))
+
+snp_Ce <- t(snp_Ce)
+snp_Ce <- snp_Ce[!duplicated(snp_Ce), ]
+cat("Dimensões snp_Ce (SNPs x Amostras):", dim(snp_Ce), "\n")
+print(table(gsub("chr|_.*", "", rownames(snp_Ce))))
+
+
+save(snp_Ca, file = "snp_Ca_filtrado.rda")
+save(snp_Cc, file = "snp_Cc_filtrado.rda")
+save(snp_Ce, file = "snp_Ce_filtrado.rda")
+
+cat("\nMatrizes filtradas foram salvas em arquivos .rda.\n")
 ```
 
 ```{r plot_kept_snps, cache=FALSE}
-load("snp_Cc_filtered.rda") 
+load("snp_Cc_filtrado.rda"); cat("Carregados", nrow(snp_Cc), "SNPs filtrados para Cc.\n")
+load("snp_Ce_filtrado.rda"); cat("Carregados", nrow(snp_Ce), "SNPs filtrados para Ce.\n")
+
 load("mout_Cc.rda")
-load("snp_Ce_filtered.rda") 
 load("mout_Ce.rda")
 
-cat("--- Gerando gráficos de diagnóstico para os SNPs mantidos ---\n")
+indices_Cc <- which(mout_Cc$snpdf$snp %in% rownames(snp_Cc))
+indices_Ce <- which(mout_Ce$snpdf$snp %in% rownames(snp_Ce))
+cat("Encontrados os índices de", length(indices_Cc), "SNPs mantidos para Cc.\n")
+cat("Encontrados os índices de", length(indices_Ce), "SNPs mantidos para Ce.\n")
 
-# --- Processamento para o alinhamento Canephora (Cc) ---
-cat("\nProcessando SNPs de 'Cc'...\n")
-
-
-snps_mantidos_Cc <- colnames(snp_Cc)
-indices_Cc <- which(mout_Cc$snpdf$snp %in% snps_mantidos_Cc)
-cat("Encontrados", length(indices_Cc), "SNPs para plotar em 'Cc'.\n")
+dir.create(path = "plots_filtrados/plots_Cc", showWarnings = FALSE, recursive = TRUE)
+dir.create(path = "plots_filtrados/plots_Ce", showWarnings = FALSE, recursive = TRUE)
 
 
-indices_list_Cc <- split(indices_Cc, ceiling(seq_along(indices_Cc) / 100))
-cat("Os SNPs de 'Cc' serão salvos em", length(indices_list_Cc), "arquivos PDF.\n")
+cat("\nIniciando a criação de plots para os SNPs filtrados de Cc...\n")
 
-dir.create(path = "plots_kept_snps_Cc", showWarnings = FALSE)
+blocos_indices_Cc <- split(indices_Cc, ceiling(seq_along(indices_Cc) / 100))
 
-for (i in seq_along(indices_list_Cc)) {
-  pdf_file_name <- paste0("plots_kept_snps_Cc/mout_kept_Cc_chunk_", i, ".pdf")
-  pdf(pdf_file_name, width = 8, height = 6)
+for (i in 1:length(blocos_indices_Cc)) {
+  pdf_path <- paste0("plots_filtrados/plots_Cc/mout_kept_Cc_bloco_", i, ".pdf")
+  pdf(pdf_path, width = 12, height = 10) # Aumentado para caber mais plots por página
   
- 
-  print(plot(mout_Cc, indices = indices_list_Cc[[i]]))
+  print(plot(mout_Cc, indices = blocos_indices_Cc[[i]]))
+  
+  # Fecha o arquivo PDF
+  dev.off()
+  cat("  -> Gerado o arquivo:", pdf_path, "\n")
+}
+cat("Plots para Cc concluídos.\n")
+
+
+cat("\nIniciando a criação de plots para os SNPs filtrados de Ce...\n")
+blocos_indices_Ce <- split(indices_Ce, ceiling(seq_along(indices_Ce) / 100))
+
+for (i in 1:length(blocos_indices_Ce)) {
+  pdf_path <- paste0("plots_filtrados/plots_Ce/mout_kept_Ce_bloco_", i, ".pdf")
+  pdf(pdf_path, width = 12, height = 10)
+  
+  print(plot(mout_Ce, indices = blocos_indices_Ce[[i]]))
   
   dev.off()
+  cat("  -> Gerado o arquivo:", pdf_path, "\n")
 }
-cat("Gráficos para 'Cc' gerados com sucesso!\n")
-
-
-cat("\nProcessando SNPs de 'Ce'...\n")
-snps_mantidos_Ce <- colnames(snp_Ce)
-indices_Ce <- which(mout_Ce$snpdf$snp %in% snps_mantidos_Ce)
-cat("Encontrados", length(indices_Ce), "SNPs para plotar em 'Ce'.\n")
-
-indices_list_Ce <- split(indices_Ce, ceiling(seq_along(indices_Ce) / 100))
-cat("Os SNPs de 'Ce' serão salvos em", length(indices_list_Ce), "arquivos PDF.\n")
-
-dir.create(path = "plots_kept_snps_Ce", showWarnings = FALSE)
-
-for (i in seq_along(indices_list_Ce)) {
-  pdf_file_name <- paste0("plots_kept_snps_Ce/mout_kept_Ce_chunk_", i, ".pdf")
-  pdf(pdf_file_name, width = 8, height = 6)
-  print(plot(mout_Ce, indices = indices_list_Ce[[i]]))
-  dev.off()
-}
-cat("Gráficos para 'Ce' gerados com sucesso!\n")
-
+cat("Plots para Ce concluídos.\n")
 ```
 
 ```{r create_map_files, cache=FALSE}
@@ -1412,6 +1382,62 @@ cat("\nMatrizes de dosagens e mapas físicos foram salvos com sucesso!\n")
 ```
 
 ```{r}
+# --- CARREGAR OS DADOS FILTRADOS DO PASSO ANTERIOR ---
+# Carregamos os objetos salvos no final da pipeline de filtragem.
+load("snp_Cc_filtrado.rda"); cat("Carregada matriz snp_Cc com dimensões:", dim(snp_Cc), "\n")
+load("snp_Ce_filtrado.rda"); cat("Carregada matriz snp_Ce com dimensões:", dim(snp_Ce), "\n")
+
+
+# --- CRIAR O MAPA FÍSICO PARA O SUBGENOMA Cc ---
+# O erro foi corrigido aqui: usamos rownames(snp_Cc) para obter os IDs dos SNPs.
+map_Cc <- data.frame(
+  SNPID = rownames(snp_Cc),
+  matrix(unlist(strsplit(rownames(snp_Cc), split = "_")), ncol = 2, byrow = TRUE, dimnames = list(NULL, c("CHR", "POS")))
+)
+
+# --- LIMPEZA E FORMATAÇÃO DAS COLUNAS DO MAPA Cc ---
+# Remove os prefixos "chr" e os sufixos de subgenoma "c"
+map_Cc$CHR <- gsub("chr", "", map_Cc$CHR)
+map_Cc$CHR <- gsub("c", "", map_Cc$CHR)
+
+# Converte a coluna de posição para número inteiro
+map_Cc$POS <- as.integer(map_Cc$POS)
+
+# Boa prática: Converte a coluna de cromossomo em um fator com níveis ordenados numericamente.
+# Isso garante que os cromossomos sempre apareçam na ordem correta (1, 2, 3, ..., 11) em gráficos futuros.
+map_Cc$CHR <- factor(map_Cc$CHR, levels = sort(as.numeric(unique(map_Cc$CHR))))
+
+cat("\nMapa físico para Cc criado com sucesso.\n")
+print(head(map_Cc))
+
+
+# --- CRIAR O MAPA FÍSICO PARA O SUBGENOMA Ce ---
+# O mesmo erro foi corrigido aqui: usamos rownames(snp_Ce).
+map_Ce <- data.frame(
+  SNPID = rownames(snp_Ce),
+  matrix(unlist(strsplit(rownames(snp_Ce), split = "_")), ncol = 2, byrow = TRUE, dimnames = list(NULL, c("CHR", "POS")))
+)
+
+# --- LIMPEZA E FORMATAÇÃO DAS COLUNAS DO MAPA Ce ---
+map_Ce$CHR <- gsub("chr", "", map_Ce$CHR)
+map_Ce$CHR <- gsub("e", "", map_Ce$CHR)
+map_Ce$POS <- as.integer(map_Ce$POS)
+map_Ce$CHR <- factor(map_Ce$CHR, levels = sort(as.numeric(unique(map_Ce$CHR))))
+
+cat("\nMapa físico para Ce criado com sucesso.\n")
+print(head(map_Ce))
+
+
+# --- SALVAR OS OBJETOS FINAIS PARA A CONSTRUÇÃO DO MAPA DE LIGAÇÃO ---
+# Salvamos tanto a matriz de dosagem final quanto o dataframe de mapa correspondente no mesmo arquivo.
+save(snp_Cc, map_Cc, file = "dados_mapeamento_Cc.rda")
+save(snp_Ce, map_Ce, file = "dados_mapeamento_Ce.rda")
+
+cat("\nMatrizes de dosagem e dataframes de mapa foram salvos em 'dados_mapeamento_Cc.rda' e 'dados_mapeamento_Ce.rda'.\n")
+
+```
+
+```{r}
 # --- SOLUÇÃO: Criar tabela de tamanhos a partir do objeto DNA já carregado ---
 
 # Verifica se o objeto 'dna' existe. Se não, recarregue-o como fez no início do script.
@@ -1436,7 +1462,7 @@ sizes <- data.frame(
 ```{r plot_snp_density, cache=FALSE, warning=FALSE}
 load("snp_filtered_Cc.rda")
 load("snp_filtered_Ce.rda")
-#sizes <- read.table("sizes.genome")
+sizes <- read.table("sizes.genome")
 colnames(sizes) <- c("CHR","POS")
 sizes$CHR <- gsub(pattern = "chr", replacement = "", sizes$CHR)
 sizes$SNPID <- paste0("chr", sizes$CHR, "_", sizes$POS)
